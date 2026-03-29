@@ -9,7 +9,8 @@ import os
 st.set_page_config(
     page_title="Scripbox Knowledge Base",
     page_icon="💸",
-    layout="centered"
+    layout="centered",
+    initial_sidebar_state="expanded"
 )
 
 # Hide Streamlit's default header/menu/footer
@@ -20,9 +21,7 @@ hide_streamlit_style = """
     /* Hide the deploy button */
     .stDeployButton {display:none;}
     /* Hide the main menu (hamburger) */
-    #MainMenu {visibility: hidden;}
-    /* Hide the top right toolbar (GitHub/share) */
-    [data-testid="stToolbar"] {visibility: hidden;}
+    #MainMenu {display: none;}
 </style>
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
