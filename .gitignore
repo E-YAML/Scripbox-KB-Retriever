@@ -1,7 +1,5 @@
 # Scripbox KB — generated files (do not commit)
 .env
-articles.json
-chroma_db/
 output_test.txt
 __pycache__/
 *.pyc
