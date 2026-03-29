@@ -13,23 +13,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Hide Streamlit's default header/menu/footer
-hide_streamlit_style = """
-<style>
-    /* Hide the Streamlit footer */
-    footer {visibility: hidden;}
-    /* Hide the deploy button */
-    .stDeployButton {display:none;}
-    /* Hide the main menu (hamburger) */
-    #MainMenu {display: none;}
-    /* Hide the top right toolbar (GitHub/share) */
-    [data-testid="stToolbar"] {visibility: hidden !important;}
-    /* Ensure the header background is transparent */
-    header {background-color: transparent !important;}
-</style>
-"""
-st.markdown(hide_streamlit_style, unsafe_allow_html=True)
-
 
 # Constants
 CHROMA_DIR = "./chroma_db"
