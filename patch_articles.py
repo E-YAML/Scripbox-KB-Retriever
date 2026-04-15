@@ -105,29 +105,61 @@ def search_articles(term):
 
 
 def extract_content(soup):
+    def _clean_text(el):
+        for tag in el.select(
+            "script, style, nav, header, footer, "
+            ".feedback-content, .article-rating, .rating, .helpful, "
+            ".related-articles, .popular-articles, .sidebar, .toc"
+        ):
+            tag.decompose()
+        lines = [ln.strip() for ln in el.get_text(separator="\n", strip=True).splitlines() if ln.strip()]
+        noise_exact = {
+            "All Articles",
+            "Recent Searches",
+            "Clear all",
+            "No recent searches",
+            "Popular Articles",
+            "Articles",
+            "Topics",
+            "Tickets",
+            "Sorry! not found",
+            "View all",
+        }
+        lines = [ln for ln in lines if ln not in noise_exact]
+        return "\n".join(lines)
+
     selectors = [
-        "div.article-body", "div.article__body", "div#article-body",
-        "div.solution-article-content", "div.article-content",
+        "div.solution-article-content .fr-view",
+        "div.solution-article-content",
+        "div#article-body .fr-view",
+        "div#article-body",
+        "div.article-body .fr-view",
+        "div.article-body",
+        "div.article__body .fr-view",
+        "div.article__body",
+        "article .fr-view",
+        "article",
+        "main .fr-view",
+        "main",
     ]
-    el = None
+
+    best = ""
     for sel in selectors:
         el = soup.select_one(sel)
-        if el:
-            break
-    if el:
-        for tag in el.select("script, style, .feedback-content, .article-rating"):
-            tag.decompose()
-        text = el.get_text(separator="\n", strip=True)
-    else:
+        if not el:
+            continue
+        t = _clean_text(el)
+        if len(t) > len(best):
+            best = t
+
+    if not best:
         body = soup.find("body")
         if body:
-            for tag in body.select("nav, header, footer, script, style"):
-                tag.decompose()
-            text = body.get_text(separator="\n", strip=True)
-        else:
-            text = ""
-    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-    return "\n".join(lines)
+            best = _clean_text(body)
+
+    if best.strip().lower() in {"popular articles", "popular article"}:
+        return ""
+    return best
 
 
 def scrape_one(url, category="", folder=""):
@@ -171,6 +203,30 @@ def main():
     existing_urls = {a["url"] for a in existing}
     print(f"Existing articles: {len(existing)}")
 
+    # Repair step: re-scrape articles that have placeholder/short content
+    placeholders = {"popular articles", "popular article", ""}
+    to_repair = [
+        a for a in existing
+        if (a.get("content", "") or "").strip().lower() in placeholders
+        or len((a.get("content", "") or "").strip()) < 80
+    ]
+    if to_repair:
+        print(f"\nRepairing {len(to_repair)} articles with placeholder/short content...")
+        repaired = 0
+        for i, a in enumerate(to_repair, 1):
+            url = a.get("url", "")
+            if not url:
+                continue
+            print(f"[repair {i}/{len(to_repair)}] {url}")
+            fresh = scrape_one(url, category=a.get("category", ""), folder=a.get("folder", ""))
+            if fresh and fresh.get("content") and len(fresh["content"].strip()) >= 80:
+                a.update(fresh)
+                repaired += 1
+                print(f"  OK repaired: {a.get('title','')}")
+            else:
+                print("  ~ still empty/short, leaving as-is")
+        print(f"Repaired {repaired}/{len(to_repair)}")
+
     # Collect candidate URLs from search + manual list
     candidate_urls = set(MANUAL_URLS)
 
@@ -178,7 +234,7 @@ def main():
     for term in SEARCH_TERMS:
         urls = search_articles(term)
         candidate_urls.update(urls)
-        print(f"  '{term}' → {len(urls)} results")
+        print(f"  '{term}' -> {len(urls)} results")
 
     # Filter to only new ones
     new_urls = [u for u in candidate_urls if u not in existing_urls]

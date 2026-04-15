@@ -184,39 +184,71 @@ def discover_article_urls(folders: dict[str, dict]) -> list[tuple[str, str, str]
 
 def extract_article_content(soup: BeautifulSoup) -> str:
     """Extract clean body text from a Freshdesk article page."""
-    # Freshdesk article body selectors (try in order)
-    selectors = [
-        "div.article-body",
-        "div.article__body",
-        "div#article-body",
-        "div.solution-article-content",
-        "div.article-content",
-        "div[class*='solution-article']",
-        "div[class*='article']",
-    ]
-    content_el = None
-    for sel in selectors:
-        content_el = soup.select_one(sel)
-        if content_el:
-            break
-
-    if content_el:
-        for tag in content_el.select("script, style, .feedback-content, .article-rating, nav"):
+    def _clean_text(el: "BeautifulSoup") -> str:
+        for tag in el.select(
+            "script, style, nav, header, footer, "
+            ".feedback-content, .article-rating, .rating, .helpful, "
+            ".related-articles, .popular-articles, .sidebar, .toc"
+        ):
             tag.decompose()
-        text = content_el.get_text(separator="\n", strip=True)
-    else:
-        # Broad fallback — strip nav/header/footer
+        lines = [ln.strip() for ln in el.get_text(separator="\n", strip=True).splitlines() if ln.strip()]
+        # Drop common portal chrome / nav strings that sometimes leak into the body.
+        noise_exact = {
+            "All Articles",
+            "Recent Searches",
+            "Clear all",
+            "No recent searches",
+            "Popular Articles",
+            "Articles",
+            "Topics",
+            "Tickets",
+            "Sorry! not found",
+            "View all",
+        }
+        lines = [ln for ln in lines if ln not in noise_exact]
+        return "\n".join(lines)
+
+    # Freshdesk often nests the real body inside a rich-text container like `.fr-view`.
+    # We try specific selectors first to avoid picking up sidebars like "Popular Articles".
+    candidates: list[BeautifulSoup] = []
+    selectors = [
+        "div.solution-article-content .fr-view",
+        "div.solution-article-content",
+        "div#article-body .fr-view",
+        "div#article-body",
+        "div.article-body .fr-view",
+        "div.article-body",
+        "div.article__body .fr-view",
+        "div.article__body",
+        "article .fr-view",
+        "article",
+        "main .fr-view",
+        "main",
+    ]
+    for sel in selectors:
+        el = soup.select_one(sel)
+        if el:
+            candidates.append(el)
+
+    text = ""
+    best = ""
+    for el in candidates:
+        t = _clean_text(el)
+        if len(t) > len(best):
+            best = t
+    text = best
+
+    # Broad fallback — strip nav/header/footer
+    if not text:
         body = soup.find("body")
         if body:
-            for tag in body.select("nav, header, footer, script, style, .search-bar"):
-                tag.decompose()
-            text = body.get_text(separator="\n", strip=True)
-        else:
-            text = ""
+            text = _clean_text(body)
 
-    # Clean excessive blank lines
-    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-    return "\n".join(lines)
+    # Heuristic: if we accidentally captured a sidebar label, treat as empty.
+    if text.strip().lower() in {"popular articles", "popular article"}:
+        text = ""
+
+    return text
 
 
 def scrape_article(url: str, category: str = "", folder: str = "") -> dict | None:
