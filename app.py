@@ -2,6 +2,7 @@
 app.py — Scripbox KB Help Assistant (Production)
 A polished, production-grade Streamlit RAG interface for the Scripbox Knowledge Base.
 Powered by ChromaDB + sentence-transformers + Groq Llama 3.3-70b (streaming).
+Fallback: Google Gemini 2.0 Flash when Groq hits rate limits.
 """
 from __future__ import annotations
 
@@ -12,6 +13,7 @@ from pathlib import Path
 import chromadb
 import streamlit as st
 from groq import Groq
+import google.generativeai as genai
 from sentence_transformers import SentenceTransformer
 
 # ─── Page config — MUST be the first Streamlit call ──────────────────────────
@@ -380,22 +382,22 @@ footer     { visibility: hidden; }
 
 
 # ─── API Key resolution ────────────────────────────────────────────────────────
-def _resolve_groq_key() -> str:
+def _resolve_key(secret_name: str) -> str:
     """
-    Resolve the Groq API key.
-    Priority: st.secrets → env var GROQ_API_KEY.
-    App owners set this once in .streamlit/secrets.toml so all users share the key.
+    Resolve an API key from st.secrets (Streamlit Cloud / local secrets.toml)
+    with fallback to environment variable of the same name.
     """
     try:
-        key = st.secrets.get("GROQ_API_KEY", "")
+        key = st.secrets.get(secret_name, "")
         if key:
             return key
     except Exception:
         pass
-    return os.getenv("GROQ_API_KEY", "")
+    return os.getenv(secret_name, "")
 
 
-GROQ_API_KEY = _resolve_groq_key()
+GROQ_API_KEY   = _resolve_key("GROQ_API_KEY")
+GEMINI_API_KEY = _resolve_key("GEMINI_API_KEY")
 
 
 # ─── Cached resources ─────────────────────────────────────────────────────────
@@ -496,6 +498,19 @@ def _groq_stream(prompt: str):
             yield delta
 
 
+def _gemini_stream(prompt: str):
+    """Generator — yields text chunks from Gemini streaming API (fallback)."""
+    genai.configure(api_key=GEMINI_API_KEY)
+    model = genai.GenerativeModel(
+        "gemini-2.0-flash",
+        system_instruction=SYSTEM_PROMPT,
+    )
+    stream = model.generate_content(prompt, stream=True)
+    for chunk in stream:
+        if chunk.text:
+            yield chunk.text
+
+
 def _score_color(score: float) -> str:
     if score >= 0.70:
         return "#10B981"  # green
@@ -552,8 +567,10 @@ kb_stats = load_kb_stats()
 total_articles = kb_stats["total"] or (collection.count() if collection else 0)
 total_categories = kb_stats["categories"]
 
-db_ok  = load_status == "ok"
-llm_ok = bool(GROQ_API_KEY)
+db_ok      = load_status == "ok"
+groq_ok    = bool(GROQ_API_KEY)
+gemini_ok  = bool(GEMINI_API_KEY)
+llm_ok     = groq_ok or gemini_ok   # app is usable if either provider is configured
 
 # ─── Sidebar ──────────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -581,14 +598,20 @@ with st.sidebar:
         'letter-spacing:0.8px;margin-bottom:0.6rem;">System Status</div>',
         unsafe_allow_html=True,
     )
-    db_dot  = '<span class="dot-green">●</span>' if db_ok  else '<span class="dot-red">●</span>'
-    llm_dot = '<span class="dot-green">●</span>' if llm_ok else '<span class="dot-red">●</span>'
+    db_dot     = '<span class="dot-green">●</span>' if db_ok     else '<span class="dot-red">●</span>'
+    groq_dot   = '<span class="dot-green">●</span>' if groq_ok   else '<span class="dot-amber">●</span>'
+    gemini_dot = '<span class="dot-green">●</span>' if gemini_ok else '<span class="dot-amber">●</span>'
+
+    groq_label   = 'Ready — Llama 3.3-70b'  if groq_ok   else 'No key (rate-limit fallback)'
+    gemini_label = 'Ready — Flash 2.0'       if gemini_ok else 'No key (configure for fallback)'
 
     st.markdown(
-        f'<div class="status-row">{db_dot} &nbsp;Vector DB&nbsp;&nbsp;'
+        f'<div class="status-row">{db_dot}     &nbsp;Vector DB&nbsp;&nbsp;'
         f'<span style="color:#475569;">{'Connected' if db_ok else 'Not found'}</span></div>'
-        f'<div class="status-row">{llm_dot} &nbsp;Groq LLM&nbsp;&nbsp;'
-        f'<span style="color:#475569;">{'Ready — Llama 3.3-70b' if llm_ok else 'No API key'}</span></div>',
+        f'<div class="status-row">{groq_dot}   &nbsp;Groq (primary)&nbsp;&nbsp;'
+        f'<span style="color:#475569;">{groq_label}</span></div>'
+        f'<div class="status-row">{gemini_dot} &nbsp;Gemini (fallback)&nbsp;&nbsp;'
+        f'<span style="color:#475569;">{gemini_label}</span></div>',
         unsafe_allow_html=True,
     )
 
@@ -632,27 +655,32 @@ with st.sidebar:
         'letter-spacing:0.8px;margin-bottom:0.5rem;">Model</div>',
         unsafe_allow_html=True,
     )
+    active_model = GROQ_MODEL if groq_ok else "gemini-2.0-flash"
     st.markdown(
-        f'<div style="font-size:0.8rem;color:#94A3B8;">🤖 `{GROQ_MODEL}`</div>'
-        f'<div style="font-size:0.8rem;color:#94A3B8;margin-top:0.25rem;">🔍 `{EMBED_MODEL}`</div>'
-        f'<div style="font-size:0.8rem;color:#94A3B8;margin-top:0.25rem;">Top-K results: `{TOP_K}`</div>',
+        f'<div style="font-size:0.8rem;color:#94A3B8;">🤖 `{active_model}`</div>'
+        f'<div style="font-size:0.8rem;color:#94A3B8;margin-top:0.2rem;">↩ Fallback: `gemini-2.0-flash`</div>'
+        f'<div style="font-size:0.8rem;color:#94A3B8;margin-top:0.2rem;">🔍 `{EMBED_MODEL}`</div>'
+        f'<div style="font-size:0.8rem;color:#94A3B8;margin-top:0.2rem;">Top-K results: `{TOP_K}`</div>',
         unsafe_allow_html=True,
     )
 
     st.markdown("---")
 
-    # Groq key notice (if missing)
+    # API key notices
     if not llm_ok:
         st.error(
-            "**Groq API key missing.**\n\n"
-            "Add your key to `.streamlit/secrets.toml`:\n"
-            "```\nGROQ_API_KEY = \"gsk_...\"\n```\n"
-            "Get a free key at [console.groq.com](https://console.groq.com)",
+            "**No LLM keys configured.**\n\n"
+            "Add at least one key to `.streamlit/secrets.toml`:\n"
+            "```\nGROQ_API_KEY   = \"gsk_...\"   # console.groq.com\n"
+            "GEMINI_API_KEY = \"AIza...\"  # aistudio.google.com\n```"
         )
     else:
+        key_info = []
+        if groq_ok:   key_info.append("Groq ✓")
+        if gemini_ok: key_info.append("Gemini ✓")
         st.markdown(
-            '<div style="font-size:0.75rem;color:#475569;padding:0.25rem 0;">'
-            '🔑 API key active — shared for all users</div>',
+            f'<div style="font-size:0.75rem;color:#475569;padding:0.25rem 0;">'
+            f'🔑 {" · ".join(key_info)} — shared for all users</div>',
             unsafe_allow_html=True,
         )
 
@@ -670,7 +698,7 @@ with st.sidebar:
     st.markdown(
         '<div style="font-size:0.7rem;color:#334155;text-align:center;'
         'margin-top:2rem;padding:0.5rem;border-top:1px solid rgba(255,255,255,0.06);">'
-        'Powered by ChromaDB · sentence-transformers<br>Groq Llama 3.3-70b</div>',
+        'Powered by ChromaDB · sentence-transformers<br>Groq Llama 3.3 · Gemini 2.0 Flash</div>',
         unsafe_allow_html=True,
     )
 
@@ -687,10 +715,11 @@ if "pending_query" not in st.session_state:
 # ─── Main content ─────────────────────────────────────────────────────────────
 
 # Header
+_badge_provider = "Groq Llama 3.3-70b" if groq_ok else "Gemini 2.0 Flash"
 st.markdown(
-    """
+    f"""
     <div class="kb-header">
-        <div class="kb-badge">⚡ Live · Groq Llama 3.3-70b</div>
+        <div class="kb-badge">⚡ Live · {_badge_provider}</div>
         <h1>💚 Scripbox Help Assistant</h1>
         <p>Ask anything about investing, KYC, withdrawals, account management &amp; more —
         answered from the official Scripbox Knowledge Base.</p>
@@ -742,7 +771,7 @@ if is_first_message:
 # ── Chat input ───────────────────────────────────────────────────────────────
 user_input = st.chat_input(
     "E.g. How do I update my bank account?",
-    disabled=not llm_ok,
+    disabled=not llm_ok,   # disabled only if BOTH keys are missing
 )
 
 # Merge chat input with pending query from chips
@@ -776,34 +805,82 @@ if user_query:
             )
             st.stop()
 
-        # Step 2: Stream Groq answer
+        # Step 2: Stream answer — Groq primary, Gemini automatic fallback
         prompt = build_prompt(user_query, hits)
+        answer = None
 
-        try:
-            answer = st.write_stream(_groq_stream(prompt))
-        except Exception as exc:
-            err_text = str(exc)
-            if "401" in err_text or "invalid_api_key" in err_text.lower():
-                error_msg = (
-                    "**Authentication error.** Your Groq API key is invalid or expired. "
-                    "Please update it in `.streamlit/secrets.toml`."
+        # ── Try Groq first ────────────────────────────────────────────────────
+        if groq_ok:
+            try:
+                answer = st.write_stream(_groq_stream(prompt))
+            except Exception as exc:
+                err_text = str(exc)
+                is_rate_limit = "429" in err_text or "rate_limit" in err_text.lower()
+                is_auth_err   = "401" in err_text or "invalid_api_key" in err_text.lower()
+
+                if is_rate_limit and gemini_ok:
+                    # Transparent fallback — user sees an info notice, not an error
+                    st.info(
+                        "⚡ Groq rate limit reached — seamlessly switching to Gemini fallback…",
+                        icon="🔄",
+                    )
+                    # answer will be filled by Gemini block below
+                elif is_auth_err:
+                    error_msg = (
+                        "**Groq authentication error.** The API key is invalid or expired. "
+                        "Please update `GROQ_API_KEY` in your Streamlit secrets."
+                    )
+                    st.error(error_msg)
+                    st.session_state.messages.append(
+                        {"role": "assistant", "content": error_msg, "hits": []}
+                    )
+                    st.stop()
+                elif is_rate_limit and not gemini_ok:
+                    error_msg = (
+                        "**Groq rate limit reached** and no Gemini fallback is configured.\n\n"
+                        "Add `GEMINI_API_KEY` to your Streamlit secrets for automatic fallback. "
+                        "Get a free key at [aistudio.google.com](https://aistudio.google.com/apikey)."
+                    )
+                    st.error(error_msg)
+                    st.session_state.messages.append(
+                        {"role": "assistant", "content": error_msg, "hits": []}
+                    )
+                    st.stop()
+                else:
+                    error_msg = f"**Groq error:** {exc}"
+                    st.error(error_msg)
+                    st.session_state.messages.append(
+                        {"role": "assistant", "content": error_msg, "hits": []}
+                    )
+                    st.stop()
+
+        # ── Gemini: used as fallback (or primary if Groq key absent) ──────────
+        if answer is None and gemini_ok:
+            try:
+                answer = st.write_stream(_gemini_stream(prompt))
+            except Exception as exc:
+                err_text = str(exc)
+                if "429" in err_text or "quota" in err_text.lower():
+                    error_msg = (
+                        "**Both Groq and Gemini have hit their rate limits.**\n\n"
+                        "Please wait a few minutes and try again."
+                    )
+                elif "401" in err_text or "api_key" in err_text.lower():
+                    error_msg = (
+                        "**Gemini authentication error.** The API key is invalid. "
+                        "Please update `GEMINI_API_KEY` in your Streamlit secrets."
+                    )
+                else:
+                    error_msg = f"**Gemini error:** {exc}"
+                st.error(error_msg)
+                st.session_state.messages.append(
+                    {"role": "assistant", "content": error_msg, "hits": []}
                 )
-            elif "429" in err_text or "rate_limit" in err_text.lower():
-                error_msg = (
-                    "**Rate limit reached.** Groq's free tier limit was hit. "
-                    "Please wait a moment and try again."
-                )
-            elif "503" in err_text or "unavailable" in err_text.lower():
-                error_msg = (
-                    "**Groq is temporarily unavailable.** "
-                    "Please try again in a few seconds."
-                )
-            else:
-                error_msg = f"**LLM error:** {exc}"
-            st.error(error_msg)
-            st.session_state.messages.append(
-                {"role": "assistant", "content": error_msg, "hits": []}
-            )
+                st.stop()
+
+        if answer is None:
+            # Shouldn't reach here, but safeguard
+            st.error("No LLM provider available. Please check your API keys.")
             st.stop()
 
         # Step 3: Render sources inline (below the streamed answer)
