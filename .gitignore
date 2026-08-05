@@ -1,7 +1,32 @@
 # Scripbox KB — generated files (do not commit)
+
+# Environment / secrets
 .env
-output_test.txt
+.streamlit/secrets.toml
+
+# Generated data (re-create with scraper.py + build_index.py)
+articles.json
+chroma_db/
+
+# Python artifacts
 __pycache__/
 *.pyc
 *.pyo
+*.pyd
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# OS artifacts
 .DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Misc
+output_test.txt

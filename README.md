@@ -1,119 +1,121 @@
-# Scripbox Knowledge Base Retriever
+# Scripbox Knowledge Base Assistant
 
-A local RAG (Retrieval-Augmented Generation) system that searches the [Scripbox Help Center](https://help.scripbox.com/support/solutions) (~211 articles) and answers your questions using an LLM.
+A production-grade RAG (Retrieval-Augmented Generation) tool that searches the [Scripbox Help Center](https://help.scripbox.com/support/solutions) (~211 articles) and answers questions with Groq Llama 3.3-70b — with streaming responses, source citations, and a polished Streamlit UI.
 
-## Requirements
+## Live Demo
 
-- **Python 3.8+**
-- **Internet access** (for scraping and LLM API calls)
-- One of the [LLM backends](#llm-backends) below
+> Open the app → see real-time streaming answers sourced from the official Scripbox Knowledge Base.
 
 ---
 
 ## Quick Start
 
 ```bash
-# 1. Clone the repo
+# 1. Clone
 git clone <your-repo-url>
-cd scriptbox-kb
+cd scripbox-kb-retriever
 
-# 2. Create a virtual environment (recommended)
+# 2. Virtual environment
 python -m venv .venv
-
-# macOS / Linux
-source .venv/bin/activate
-
-# Windows (PowerShell)
-.venv\Scripts\Activate.ps1
+source .venv/bin/activate          # macOS / Linux
+.venv\Scripts\Activate.ps1         # Windows PowerShell
 
 # 3. Install dependencies
 pip install -r requirements.txt
 
-# 4. Configure your LLM key
-cp .env.example .env
-# Edit .env and add your GROQ_API_KEY (see LLM Backends below)
+# 4. Add your Groq API key (free at console.groq.com)
+# Edit .streamlit/secrets.toml:
+#   GROQ_API_KEY = "gsk_xxxxxxxxxxxxxxxxxxxx"
 
-# 5. Scrape the knowledge base (~3 min, run once)
-python scraper.py
+# 5. Build the knowledge base (run ONCE)
+python scraper.py       # scrape articles (~3 min)
+python build_index.py   # build vector index (~30 sec)
 
-# 6. Build the vector index (~30 sec, run once)
-python build_index.py
+# 6. Launch the app
+streamlit run app.py
+```
 
-# 7. Start asking questions!
-python retriever.py
+The app opens at **http://localhost:8501**.
+
+---
+
+## Setting Up the Groq API Key
+
+Everyone who uses your hosted app shares **one Groq API key** — you set it once and it's used for all users.
+
+1. Get a free key at [console.groq.com](https://console.groq.com) → **API Keys** → **Create**
+2. Open `.streamlit/secrets.toml` (already created for you) and paste it:
+
+```toml
+GROQ_API_KEY = "gsk_xxxxxxxxxxxxxxxxxxxx"
+```
+
+> **Security**: `secrets.toml` is in `.gitignore` — it will never be committed.
+
+---
+
+## Architecture
+
+```
+help.scripbox.com
+       │
+  scraper.py  ──────────────→  articles.json  (211 articles)
+                                      │
+                               build_index.py
+                              (sentence-transformers
+                               all-MiniLM-L6-v2)
+                                      │
+                                  chroma_db/   (vector store)
+                                      │
+                  ┌───────────────────┘
+            User question
+                  │
+           Embed query (all-MiniLM-L6-v2)
+                  │
+           ChromaDB top-5 search
+                  │
+           Groq Llama 3.3-70b (streaming)
+                  │
+         Streamed answer + source citations
 ```
 
 ---
 
-## LLM Backends
+## Features
 
-The retriever auto-detects which LLM to use based on what's configured. Priority order:
-
-| Priority | Backend | Cost | Daily Limit | Setup |
-|---|---|---|---|---|
-| **1** | **Groq** ⭐ | Free | 14,400 req | Get key at [console.groq.com](https://console.groq.com) |
-| **2** | **Ollama** | Free | None (local) | [Install Ollama](https://ollama.com), then `ollama pull llama3` |
-| **3** | Gemini | Free tier | ~50 req/min | Get key at [aistudio.google.com](https://aistudio.google.com/apikey) |
-
-**Groq is recommended** — free, instant, no local GPU needed.
-
-### Setting up Groq (recommended)
-
-1. Go to [console.groq.com](https://console.groq.com) → API Keys → Create key
-2. Add to your `.env`:
-   ```
-   GROQ_API_KEY=gsk_xxxxxxxxxxxxxxxxxxxx
-   ```
-
-### Setting up Ollama (no API key, runs locally)
-
-```bash
-# macOS (Homebrew)
-brew install ollama
-
-# macOS / Linux (curl)
-curl -fsSL https://ollama.com/install.sh | sh
-
-# Windows: download installer from https://ollama.com/download
-
-# Pull a model (one-time download, ~4 GB)
-ollama pull llama3
-```
-Ollama is auto-detected — no `.env` changes needed.
+| Feature | Detail |
+|---|---|
+| **Streaming answers** | Groq Llama 3.3-70b, token-by-token output |
+| **Source citations** | Top-5 matching articles with relevance % |
+| **Starter prompts** | 6 curated example questions to click |
+| **KB stats** | Article count + category browser in sidebar |
+| **System status** | Live DB + LLM health indicators |
+| **Shared API key** | One Groq key for all users — set in secrets.toml |
+| **Robust errors** | Friendly messages for rate limits, auth errors, missing DB |
 
 ---
 
-## Usage
-
-### Interactive mode
+## Keeping the Index Up to Date
 
 ```bash
-python retriever.py
-```
-
-Type any question and get an AI-synthesized answer with source article links.
-
-### Single-shot mode
-
-```bash
-python retriever.py "How do I withdraw my investments?"
-python retriever.py "What is KYC and how do I validate it?"
-python retriever.py "My child became a major. What changes are needed?"
-```
-
----
-
-## Keeping the index up to date
-
-When the Scripbox help center is updated, refresh your local data:
-
-```bash
-# Option A: Full re-scrape
+# Full re-scrape (when Scripbox adds many new articles)
 python scraper.py
 python build_index.py
 
-# Option B: Incremental patch (adds only missing articles, faster)
+# Incremental patch (faster — only adds missing articles)
 python patch_articles.py
+```
+
+---
+
+## CLI Usage (without Streamlit)
+
+```bash
+# Interactive Q&A in terminal
+python retriever.py
+
+# Single-shot query
+python retriever.py "How do I withdraw my investments?"
 ```
 
 ---
@@ -121,61 +123,31 @@ python patch_articles.py
 ## File Reference
 
 ```
-scriptbox-kb/
-├── scraper.py          # Step 1 — crawls all articles → articles.json
-├── build_index.py      # Step 2 — embeds articles   → chroma_db/
-├── retriever.py        # Step 3 — ask questions
-├── patch_articles.py   # Optional — adds missing articles incrementally
-├── requirements.txt    # Python dependencies
-├── .env.example        # LLM key template
-├── .env                # Your keys (git-ignored)
-├── articles.json       # Scraped articles (git-ignored, regenerated by scraper)
-└── chroma_db/          # Vector store (git-ignored, regenerated by build_index)
+scripbox-kb-retriever/
+├── app.py                          # Streamlit web UI (production)
+├── retriever.py                    # CLI retriever (Groq / Ollama / Gemini)
+├── scraper.py                      # Crawls help.scripbox.com → articles.json
+├── build_index.py                  # Embeds articles → chroma_db/
+├── patch_articles.py               # Incremental index updater
+├── requirements.txt                # Pinned Python dependencies
+├── .streamlit/
+│   ├── config.toml                 # Streamlit theme (Scripbox brand colors)
+│   ├── secrets.toml                # Your Groq key (git-ignored)
+│   └── secrets.toml.example        # Key format reference
+├── .env.example                    # Env var reference (for CLI use)
+├── articles.json                   # Scraped articles (git-ignored)
+└── chroma_db/                      # Vector store (git-ignored)
 ```
 
 ---
 
 ## Troubleshooting
 
-### `chroma_db/ not found`
-Run `python build_index.py` first.
-
-### `articles.json not found`
-Run `python scraper.py` first.
-
-### Groq `401 Unauthorized`
-Check your `GROQ_API_KEY` in `.env` — make sure there are no extra spaces.
-
-### Answers are wrong or incomplete
-Some articles may not have been scraped yet. Run `python patch_articles.py` to find and add missing ones.
-
-### Colors not displaying on Windows
-Run `pip install colorama` — it's already in `requirements.txt` but ensure it's installed.
-
-### Python version error
-Ensure Python 3.8 or higher: `python --version`
-
----
-
-## How it works
-
-```
-help.scripbox.com
-       │
-  scraper.py  ──────────────────→  articles.json  (211 articles)
-                                         │
-                                  build_index.py
-                                    (sentence-transformers
-                                     all-MiniLM-L6-v2)
-                                         │
-                                     chroma_db/   (vector store)
-                                         │
-                                   retriever.py
-                                    ┌────┴─────┐
-                              your question    top-5 matching articles
-                                         │
-                                   LLM backend
-                                 (Groq / Ollama / Gemini)
-                                         │
-                                 synthesized answer + sources
-```
+| Error | Fix |
+|---|---|
+| `chroma_db/ not found` | Run `python build_index.py` first |
+| `articles.json not found` | Run `python scraper.py` first |
+| `Groq key missing` warning | Add key to `.streamlit/secrets.toml` |
+| `401 Unauthorized` | Key is invalid — check console.groq.com |
+| `429 Rate limit` | Groq free tier hit — wait a moment and retry |
+| `Answers seem wrong` | Run `python patch_articles.py` to add any missing articles |
