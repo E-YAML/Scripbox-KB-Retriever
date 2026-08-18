@@ -85,7 +85,7 @@ help.scripbox.com
 
 | Feature | Detail |
 |---|---|
-| **Streaming answers** | Groq Llama 3.3-70b, token-by-token output |
+| **Streaming answers** | Groq (configurable via `GROQ_MODEL`, e.g. `llama-3.3-70b-specdec`), token-by-token output |
 | **Source citations** | Top-5 matching articles with relevance % |
 | **Starter prompts** | 6 curated example questions to click |
 | **KB stats** | Article count + category browser in sidebar |

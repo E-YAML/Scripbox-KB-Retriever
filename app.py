@@ -33,7 +33,7 @@ CHROMA_DIR      = "./chroma_db"
 COLLECTION_NAME = "scripbox_kb"
 EMBED_MODEL     = "all-MiniLM-L6-v2"
 TOP_K           = 5
-GROQ_MODEL      = "llama-3.3-70b-versatile"
+DEFAULT_GROQ_MODEL = "llama-3.3-70b-specdec"
 ARTICLES_FILE   = "./articles.json"
 
 SYSTEM_PROMPT = (
@@ -398,6 +398,7 @@ def _resolve_key(secret_name: str) -> str:
 
 GROQ_API_KEY   = _resolve_key("GROQ_API_KEY")
 GEMINI_API_KEY = _resolve_key("GEMINI_API_KEY")
+GROQ_MODEL     = _resolve_key("GROQ_MODEL") or DEFAULT_GROQ_MODEL
 
 
 # ─── Cached resources ─────────────────────────────────────────────────────────
@@ -602,7 +603,7 @@ with st.sidebar:
     groq_dot   = '<span class="dot-green">●</span>' if groq_ok   else '<span class="dot-amber">●</span>'
     gemini_dot = '<span class="dot-green">●</span>' if gemini_ok else '<span class="dot-amber">●</span>'
 
-    groq_label   = 'Ready — Llama 3.3-70b'  if groq_ok   else 'No key (rate-limit fallback)'
+    groq_label   = f'Ready — {GROQ_MODEL}' if groq_ok   else 'No key (rate-limit fallback)'
     gemini_label = 'Ready — Flash 2.0'       if gemini_ok else 'No key (configure for fallback)'
 
     st.markdown(
@@ -817,18 +818,31 @@ if user_query:
                 err_text = str(exc)
                 is_rate_limit = "429" in err_text or "rate_limit" in err_text.lower()
                 is_auth_err   = "401" in err_text or "invalid_api_key" in err_text.lower()
+                is_model_err  = "404" in err_text or "model_not_found" in err_text.lower() or "decommissioned" in err_text.lower()
 
-                if is_rate_limit and gemini_ok:
-                    # Transparent fallback — user sees an info notice, not an error
-                    st.info(
-                        "⚡ Groq rate limit reached — seamlessly switching to Gemini fallback…",
-                        icon="🔄",
+                if (is_rate_limit or is_model_err) and gemini_ok:
+                    notice = (
+                        "⚡ Groq rate limit reached — seamlessly switching to Gemini fallback…"
+                        if is_rate_limit
+                        else f"⚠️ Groq model `{GROQ_MODEL}` unavailable or decommissioned — seamlessly switching to Gemini fallback…"
                     )
+                    st.info(notice, icon="🔄")
                     # answer will be filled by Gemini block below
                 elif is_auth_err:
                     error_msg = (
                         "**Groq authentication error.** The API key is invalid or expired. "
                         "Please update `GROQ_API_KEY` in your Streamlit secrets."
+                    )
+                    st.error(error_msg)
+                    st.session_state.messages.append(
+                        {"role": "assistant", "content": error_msg, "hits": []}
+                    )
+                    st.stop()
+                elif is_model_err and not gemini_ok:
+                    error_msg = (
+                        f"**Groq Model Error:** The model `{GROQ_MODEL}` is not found or has been decommissioned on Groq.\n\n"
+                        "Please update `GROQ_MODEL` in your `.env` or `.streamlit/secrets.toml` to an active Groq model "
+                        "(e.g., `llama-3.3-70b-specdec` or `llama-3.1-8b-instant`), or configure `GEMINI_API_KEY` for automatic fallback."
                     )
                     st.error(error_msg)
                     st.session_state.messages.append(

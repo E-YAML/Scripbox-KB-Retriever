@@ -34,6 +34,7 @@ except ImportError:
 load_dotenv()
 GROQ_API_KEY   = os.getenv("GROQ_API_KEY", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GROQ_MODEL     = os.getenv("GROQ_MODEL", "llama-3.3-70b-specdec")
 OLLAMA_HOST    = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 OLLAMA_MODEL   = os.getenv("OLLAMA_MODEL", "llama3")
 
@@ -86,14 +87,14 @@ def _build_prompt(query: str, hits: list) -> str:
 
 
 def _synthesize_groq(query: str, hits: list) -> str:
-    """Groq free API — Llama 3 70B, 14,400 req/day free tier."""
+    """Groq free API — fast LLM completions."""
     from groq import Groq
     client = Groq(api_key=GROQ_API_KEY)
     prompt = _build_prompt(query, hits)
     for attempt in range(3):
         try:
             resp = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model=GROQ_MODEL,
                 messages=[
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user",   "content": prompt},
@@ -110,6 +111,9 @@ def _synthesize_groq(query: str, hits: list) -> str:
                 print(f"  {YELLOW}Groq rate limited — waiting {int(wait)}s...{RESET}")
                 time.sleep(wait)
                 continue
+            if ("404" in err or "model_not_found" in err.lower() or "decommissioned" in err.lower()) and GEMINI_API_KEY:
+                print(f"  {YELLOW}Groq model '{GROQ_MODEL}' unavailable. Falling back to Gemini...{RESET}")
+                return _synthesize_gemini(query, hits)
             return f"[Groq error: {e}]"
     return "[Groq error: max retries exceeded]"
 
@@ -176,7 +180,7 @@ def detect_llm_backend() -> tuple:
     Priority: Groq > Ollama > Gemini > None
     """
     if GROQ_API_KEY:
-        return ("groq", "Groq (llama-3.3-70b-versatile) — free tier")
+        return ("groq", f"Groq ({GROQ_MODEL}) — free tier")
     if _ollama_running():
         return ("ollama", f"Ollama local ({OLLAMA_MODEL})")
     if GEMINI_API_KEY:
