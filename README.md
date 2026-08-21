@@ -1,6 +1,6 @@
 # Scripbox Knowledge Base Assistant
 
-A production-grade RAG (Retrieval-Augmented Generation) tool that searches the [Scripbox Help Center](https://help.scripbox.com/support/solutions) (~211 articles) and answers questions with Groq Llama 3.3-70b — with streaming responses, source citations, and a polished Streamlit UI.
+A production-grade RAG (Retrieval-Augmented Generation) tool that searches the [Scripbox Help Center](https://help.scripbox.com/support/solutions) (~211 articles) and answers questions with Groq OpenAI GPT-OSS 120B — with streaming responses, source citations, and a polished Streamlit UI.
 
 ## Live Demo
 
@@ -74,7 +74,7 @@ help.scripbox.com
                   │
            ChromaDB top-5 search
                   │
-           Groq Llama 3.3-70b (streaming)
+           Groq OpenAI GPT-OSS 120B (streaming)
                   │
          Streamed answer + source citations
 ```
@@ -85,7 +85,7 @@ help.scripbox.com
 
 | Feature | Detail |
 |---|---|
-| **Streaming answers** | Groq (configurable via `GROQ_MODEL`, e.g. `llama-3.3-70b-specdec`), token-by-token output |
+| **Streaming answers** | Groq (configurable via `GROQ_MODEL`, e.g. `openai/gpt-oss-120b` or `openai/gpt-oss-20b`), token-by-token output |
 | **Source citations** | Top-5 matching articles with relevance % |
 | **Starter prompts** | 6 curated example questions to click |
 | **KB stats** | Article count + category browser in sidebar |

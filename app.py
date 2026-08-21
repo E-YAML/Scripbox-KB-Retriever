@@ -1,7 +1,7 @@
 """
 app.py — Scripbox KB Help Assistant (Production)
 A polished, production-grade Streamlit RAG interface for the Scripbox Knowledge Base.
-Powered by ChromaDB + sentence-transformers + Groq Llama 3.3-70b (streaming).
+Powered by ChromaDB + sentence-transformers + Groq OpenAI GPT-OSS 120B (streaming).
 Fallback: Google Gemini 2.0 Flash when Groq hits rate limits.
 """
 from __future__ import annotations
@@ -24,7 +24,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
     menu_items={
         "Get Help": "https://help.scripbox.com",
-        "About": "Scripbox KB Assistant — RAG powered by ChromaDB + Groq Llama 3.3",
+        "About": "Scripbox KB Assistant — RAG powered by ChromaDB + Groq GPT-OSS 120B",
     },
 )
 
@@ -33,7 +33,7 @@ CHROMA_DIR      = "./chroma_db"
 COLLECTION_NAME = "scripbox_kb"
 EMBED_MODEL     = "all-MiniLM-L6-v2"
 TOP_K           = 5
-DEFAULT_GROQ_MODEL   = "llama-3.3-70b-versatile"
+DEFAULT_GROQ_MODEL   = "openai/gpt-oss-120b"
 DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
 ARTICLES_FILE        = "./articles.json"
 
@@ -701,7 +701,7 @@ with st.sidebar:
     st.markdown(
         '<div style="font-size:0.7rem;color:#334155;text-align:center;'
         'margin-top:2rem;padding:0.5rem;border-top:1px solid rgba(255,255,255,0.06);">'
-        'Powered by ChromaDB · sentence-transformers<br>Groq Llama 3.3 · Gemini 2.0 Flash</div>',
+        'Powered by ChromaDB · sentence-transformers<br>Groq GPT-OSS 120B · Gemini 2.0 Flash</div>',
         unsafe_allow_html=True,
     )
 
@@ -718,7 +718,7 @@ if "pending_query" not in st.session_state:
 # ─── Main content ─────────────────────────────────────────────────────────────
 
 # Header
-_badge_provider = "Groq Llama 3.3-70b" if groq_ok else "Gemini 2.0 Flash"
+_badge_provider = f"Groq {GROQ_MODEL}" if groq_ok else f"Gemini {GEMINI_MODEL}"
 st.markdown(
     f"""
     <div class="kb-header">
@@ -844,7 +844,7 @@ if user_query:
                     error_msg = (
                         f"**Groq Model Error:** The model `{GROQ_MODEL}` is not found or has been decommissioned on Groq.\n\n"
                         "Please update `GROQ_MODEL` in your `.env` or `.streamlit/secrets.toml` to an active Groq model "
-                        "(e.g., `llama-3.3-70b-versatile` or `llama-3.1-8b-instant`), or configure `GEMINI_API_KEY` for automatic fallback."
+                        "(e.g., `openai/gpt-oss-120b` or `openai/gpt-oss-20b`), or configure `GEMINI_API_KEY` for automatic fallback."
                     )
                     st.error(error_msg)
                     st.session_state.messages.append(

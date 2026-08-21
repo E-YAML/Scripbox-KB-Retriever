@@ -3,7 +3,7 @@ retriever.py — Scripbox KB Interactive Q&A
 Ask a question and get an answer sourced from Scripbox help articles.
 
 LLM priority (first available key/service wins):
-  1. Groq  — free API, fast Llama 3 (set GROQ_API_KEY in .env)
+  1. Groq  — free API, fast inference with OpenAI GPT-OSS (set GROQ_API_KEY in .env)
   2. Ollama — fully local, no key needed (install from ollama.com)
   3. Gemini — fallback if GEMINI_API_KEY is set
 
@@ -34,7 +34,7 @@ except ImportError:
 load_dotenv()
 GROQ_API_KEY   = os.getenv("GROQ_API_KEY", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GROQ_MODEL     = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_MODEL     = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 GEMINI_MODEL   = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 OLLAMA_HOST    = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 OLLAMA_MODEL   = os.getenv("OLLAMA_MODEL", "llama3")
