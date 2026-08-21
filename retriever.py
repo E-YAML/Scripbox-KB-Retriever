@@ -34,7 +34,8 @@ except ImportError:
 load_dotenv()
 GROQ_API_KEY   = os.getenv("GROQ_API_KEY", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GROQ_MODEL     = os.getenv("GROQ_MODEL", "llama-3.3-70b-specdec")
+GROQ_MODEL     = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+GEMINI_MODEL   = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 OLLAMA_HOST    = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 OLLAMA_MODEL   = os.getenv("OLLAMA_MODEL", "llama3")
 
@@ -146,7 +147,7 @@ def _synthesize_gemini(query: str, hits: list) -> str:
     """Gemini flash — fallback."""
     import google.generativeai as genai
     genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel("gemini-2.0-flash")
+    model = genai.GenerativeModel(GEMINI_MODEL)
     prompt = _build_prompt(query, hits)
     for attempt in range(3):
         try:
@@ -184,7 +185,7 @@ def detect_llm_backend() -> tuple:
     if _ollama_running():
         return ("ollama", f"Ollama local ({OLLAMA_MODEL})")
     if GEMINI_API_KEY:
-        return ("gemini", "Gemini 2.0 Flash")
+        return ("gemini", f"Gemini ({GEMINI_MODEL})")
     return ("none", "No LLM configured — showing raw snippets only")
 
 

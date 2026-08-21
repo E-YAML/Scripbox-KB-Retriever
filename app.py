@@ -33,8 +33,9 @@ CHROMA_DIR      = "./chroma_db"
 COLLECTION_NAME = "scripbox_kb"
 EMBED_MODEL     = "all-MiniLM-L6-v2"
 TOP_K           = 5
-DEFAULT_GROQ_MODEL = "llama-3.3-70b-specdec"
-ARTICLES_FILE   = "./articles.json"
+DEFAULT_GROQ_MODEL   = "llama-3.3-70b-versatile"
+DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
+ARTICLES_FILE        = "./articles.json"
 
 SYSTEM_PROMPT = (
     "You are a helpful, friendly customer support assistant for Scripbox, "
@@ -399,6 +400,7 @@ def _resolve_key(secret_name: str) -> str:
 GROQ_API_KEY   = _resolve_key("GROQ_API_KEY")
 GEMINI_API_KEY = _resolve_key("GEMINI_API_KEY")
 GROQ_MODEL     = _resolve_key("GROQ_MODEL") or DEFAULT_GROQ_MODEL
+GEMINI_MODEL   = _resolve_key("GEMINI_MODEL") or DEFAULT_GEMINI_MODEL
 
 
 # ─── Cached resources ─────────────────────────────────────────────────────────
@@ -503,7 +505,7 @@ def _gemini_stream(prompt: str):
     """Generator — yields text chunks from Gemini streaming API (fallback)."""
     genai.configure(api_key=GEMINI_API_KEY)
     model = genai.GenerativeModel(
-        "gemini-2.0-flash",
+        GEMINI_MODEL,
         system_instruction=SYSTEM_PROMPT,
     )
     stream = model.generate_content(prompt, stream=True)
@@ -604,7 +606,7 @@ with st.sidebar:
     gemini_dot = '<span class="dot-green">●</span>' if gemini_ok else '<span class="dot-amber">●</span>'
 
     groq_label   = f'Ready — {GROQ_MODEL}' if groq_ok   else 'No key (rate-limit fallback)'
-    gemini_label = 'Ready — Flash 2.0'       if gemini_ok else 'No key (configure for fallback)'
+    gemini_label = f'Ready — {GEMINI_MODEL}' if gemini_ok else 'No key (configure for fallback)'
 
     st.markdown(
         f'<div class="status-row">{db_dot}     &nbsp;Vector DB&nbsp;&nbsp;'
@@ -656,10 +658,10 @@ with st.sidebar:
         'letter-spacing:0.8px;margin-bottom:0.5rem;">Model</div>',
         unsafe_allow_html=True,
     )
-    active_model = GROQ_MODEL if groq_ok else "gemini-2.0-flash"
+    active_model = GROQ_MODEL if groq_ok else GEMINI_MODEL
     st.markdown(
         f'<div style="font-size:0.8rem;color:#94A3B8;">🤖 `{active_model}`</div>'
-        f'<div style="font-size:0.8rem;color:#94A3B8;margin-top:0.2rem;">↩ Fallback: `gemini-2.0-flash`</div>'
+        f'<div style="font-size:0.8rem;color:#94A3B8;margin-top:0.2rem;">↩ Fallback: `{GEMINI_MODEL}`</div>'
         f'<div style="font-size:0.8rem;color:#94A3B8;margin-top:0.2rem;">🔍 `{EMBED_MODEL}`</div>'
         f'<div style="font-size:0.8rem;color:#94A3B8;margin-top:0.2rem;">Top-K results: `{TOP_K}`</div>',
         unsafe_allow_html=True,
@@ -842,7 +844,7 @@ if user_query:
                     error_msg = (
                         f"**Groq Model Error:** The model `{GROQ_MODEL}` is not found or has been decommissioned on Groq.\n\n"
                         "Please update `GROQ_MODEL` in your `.env` or `.streamlit/secrets.toml` to an active Groq model "
-                        "(e.g., `llama-3.3-70b-specdec` or `llama-3.1-8b-instant`), or configure `GEMINI_API_KEY` for automatic fallback."
+                        "(e.g., `llama-3.3-70b-versatile` or `llama-3.1-8b-instant`), or configure `GEMINI_API_KEY` for automatic fallback."
                     )
                     st.error(error_msg)
                     st.session_state.messages.append(
