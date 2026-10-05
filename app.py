@@ -4,17 +4,20 @@ A polished, production-grade Streamlit RAG interface for the Scripbox Knowledge 
 Powered by ChromaDB + sentence-transformers + Groq OpenAI GPT-OSS 120B (streaming).
 Fallback: Google Gemini 2.0 Flash when Groq hits rate limits.
 """
+
 from __future__ import annotations
 
-import json
-import os
-from pathlib import Path
+import contextlib
 
-import chromadb
 import streamlit as st
-from groq import Groq
-import google.generativeai as genai
-from sentence_transformers import SentenceTransformer
+
+from scripbox_kb.config import load_config
+from scripbox_kb.kb_store import KBStore, RetrievalHit, create_kb_store
+from scripbox_kb.prompting import (
+    STARTER_QUESTIONS,
+    WELCOME_MESSAGE,
+)
+from scripbox_kb.service import QueryService
 
 # ─── Page config — MUST be the first Streamlit call ──────────────────────────
 st.set_page_config(
@@ -26,41 +29,6 @@ st.set_page_config(
         "Get Help": "https://help.scripbox.com",
         "About": "Scripbox KB Assistant — RAG powered by ChromaDB + Groq GPT-OSS 120B",
     },
-)
-
-# ─── Constants ────────────────────────────────────────────────────────────────
-CHROMA_DIR      = "./chroma_db"
-COLLECTION_NAME = "scripbox_kb"
-EMBED_MODEL     = "all-MiniLM-L6-v2"
-TOP_K           = 5
-DEFAULT_GROQ_MODEL   = "openai/gpt-oss-120b"
-DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
-ARTICLES_FILE        = "./articles.json"
-
-SYSTEM_PROMPT = (
-    "You are a helpful, friendly customer support assistant for Scripbox, "
-    "an investment platform. Answer the user's question using ONLY the "
-    "information from the provided knowledge base articles. Be concise, "
-    "accurate, and professional. Use bullet points where appropriate. "
-    "If the articles don't contain enough information to fully answer, "
-    "say so honestly and suggest the user contacts Scripbox support. "
-    "Do NOT list article citations in your answer — they are shown separately in the UI."
-)
-
-STARTER_QUESTIONS = [
-    "How do I update my bank account details?",
-    "What is KYC and how do I complete it?",
-    "How do I withdraw my investments?",
-    "What happens if my SIP payment fails?",
-    "How do I track my portfolio performance?",
-    "Can I invest on behalf of my child?",
-]
-
-WELCOME_MESSAGE = (
-    "👋 Hello! I'm your Scripbox Help Assistant. "
-    "I can answer questions about investing, KYC, withdrawals, account management, "
-    "and more — all sourced directly from the official Scripbox Knowledge Base. "
-    "What would you like to know?"
 )
 
 # ─── CSS ──────────────────────────────────────────────────────────────────────
@@ -382,136 +350,29 @@ footer     { visibility: hidden; }
 )
 
 
-# ─── API Key resolution ────────────────────────────────────────────────────────
-def _resolve_key(secret_name: str) -> str:
-    """
-    Resolve an API key from st.secrets (Streamlit Cloud / local secrets.toml)
-    with fallback to environment variable of the same name.
-    """
-    try:
-        key = st.secrets.get(secret_name, "")
-        if key:
-            return key
-    except Exception:
-        pass
-    return os.getenv(secret_name, "")
+# ─── Configuration & Resources ────────────────────────────────────────────────
+config = load_config()
 
 
-GROQ_API_KEY   = _resolve_key("GROQ_API_KEY")
-GEMINI_API_KEY = _resolve_key("GEMINI_API_KEY")
-GROQ_MODEL     = _resolve_key("GROQ_MODEL") or DEFAULT_GROQ_MODEL
-GEMINI_MODEL   = _resolve_key("GEMINI_MODEL") or DEFAULT_GEMINI_MODEL
-
-
-# ─── Cached resources ─────────────────────────────────────────────────────────
 @st.cache_resource(show_spinner=False)
-def load_resources():
-    """Load ChromaDB collection and embedding model (cached across sessions)."""
-    db_path = Path(CHROMA_DIR)
-    if not db_path.exists():
-        return None, None, "chroma_missing"
-
-    try:
-        client = chromadb.PersistentClient(path=str(db_path))
-        collection = client.get_collection(COLLECTION_NAME)
-    except Exception as exc:
-        return None, None, f"collection_error:{exc}"
-
-    try:
-        embed_model = SentenceTransformer(EMBED_MODEL)
-    except Exception as exc:
-        return None, None, f"model_error:{exc}"
-
-    return collection, embed_model, "ok"
+def get_kb_store() -> KBStore:
+    """Initialize and load the KBStore once across sessions."""
+    store = create_kb_store(config)
+    with contextlib.suppress(Exception):
+        store.load()
+    return store
 
 
 @st.cache_data(show_spinner=False)
-def load_kb_stats() -> dict:
-    """Return article count + category list from articles.json (best-effort)."""
-    stats: dict = {"total": 0, "categories": 0, "category_list": []}
-    try:
-        with open(ARTICLES_FILE, "r", encoding="utf-8") as f:
-            articles = json.load(f)
-        stats["total"] = len(articles)
-        cats = sorted({a.get("category", "").strip() for a in articles if a.get("category")})
-        stats["categories"] = len(cats)
-        stats["category_list"] = cats
-    except Exception:
-        pass
-    return stats
-
-
-# ─── Helper functions ─────────────────────────────────────────────────────────
-def retrieve_contexts(query: str, collection, embed_model) -> list[dict]:
-    """Embed query and retrieve top-K matching articles from ChromaDB."""
-    qv = embed_model.encode(query).tolist()
-    res = collection.query(
-        query_embeddings=[qv],
-        n_results=TOP_K,
-        include=["documents", "metadatas", "distances"],
-    )
-    hits = []
-    if res["ids"] and res["ids"][0]:
-        for i in range(len(res["ids"][0])):
-            score = float(1.0 - res["distances"][0][i])
-            hits.append(
-                {
-                    "title":    res["metadatas"][0][i].get("title", "Untitled"),
-                    "url":      res["metadatas"][0][i].get("url", "#"),
-                    "category": res["metadatas"][0][i].get("category", ""),
-                    "folder":   res["metadatas"][0][i].get("folder", ""),
-                    "document": res["documents"][0][i],
-                    "score":    score,
-                }
-            )
-    return hits
-
-
-def build_prompt(query: str, hits: list[dict]) -> str:
-    """Construct the RAG prompt from retrieved articles."""
-    parts = []
-    for i, hit in enumerate(hits, 1):
-        clean_doc = hit["document"].replace("\n", " ")[:1800]
-        parts.append(
-            f"[Article {i}: {hit['title']}]\n"
-            f"Category: {hit['category']} > {hit['folder']}\n"
-            f"URL: {hit['url']}\n\n"
-            f"{clean_doc}"
-        )
-    context = "\n\n---\n\n".join(parts)
-    return f"KNOWLEDGE BASE ARTICLES:\n{context}\n\nUSER QUESTION: {query}\n\nANSWER:"
-
-
-def _groq_stream(prompt: str):
-    """Generator — yields text chunks from Groq streaming API."""
-    client = Groq(api_key=GROQ_API_KEY)
-    stream = client.chat.completions.create(
-        model=GROQ_MODEL,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user",   "content": prompt},
-        ],
-        temperature=0.2,
-        max_tokens=1024,
-        stream=True,
-    )
-    for chunk in stream:
-        delta = chunk.choices[0].delta.content
-        if delta:
-            yield delta
-
-
-def _gemini_stream(prompt: str):
-    """Generator — yields text chunks from Gemini streaming API (fallback)."""
-    genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel(
-        GEMINI_MODEL,
-        system_instruction=SYSTEM_PROMPT,
-    )
-    stream = model.generate_content(prompt, stream=True)
-    for chunk in stream:
-        if chunk.text:
-            yield chunk.text
+def get_kb_stats() -> dict:
+    """Load KB stats from articles.json."""
+    store = create_kb_store(config)
+    stats = store.get_stats()
+    return {
+        "total": stats.total,
+        "categories": stats.categories,
+        "category_list": stats.category_list,
+    }
 
 
 def _score_color(score: float) -> str:
@@ -519,23 +380,38 @@ def _score_color(score: float) -> str:
         return "#10B981"  # green
     if score >= 0.50:
         return "#F59E0B"  # amber
-    return "#EF4444"      # red
+    return "#EF4444"  # red
 
 
-def render_sources(hits: list[dict]):
+def render_sources(hits: list[RetrievalHit] | list[dict]):
     """Render source article expanders with relevance bars."""
     st.markdown('<p class="sources-header">📚 Source Articles</p>', unsafe_allow_html=True)
     for i, hit in enumerate(hits, 1):
-        score     = max(0.0, min(1.0, hit["score"]))
+        if isinstance(hit, dict):
+            title = hit.get("title", "Untitled")
+            url = hit.get("url", "#")
+            category = hit.get("category", "")
+            folder = hit.get("folder", "")
+            document = hit.get("document", "")
+            score = float(hit.get("score", 0.0))
+        else:
+            title = hit.title
+            url = hit.url
+            category = hit.category
+            folder = hit.folder
+            document = hit.document
+            score = float(hit.score)
+
+        score = max(0.0, min(1.0, score))
         score_pct = int(score * 100)
-        color     = _score_color(score)
-        label     = f"[{i}]  {hit['title']}"
+        color = _score_color(score)
+        label = f"[{i}]  {title}"
 
         with st.expander(label):
             meta_col, score_col = st.columns([3, 1])
             with meta_col:
-                parts = [p for p in [hit["category"], hit["folder"]] if p]
-                st.caption(f"📁 {'  ›  '.join(parts)}" if parts else "📁 General")
+                parts = [p for p in [category, folder] if p]
+                st.caption(f"📁 {'  >  '.join(parts)}" if parts else "📁 General")
             with score_col:
                 st.markdown(
                     f'<span style="font-size:0.8rem;font-weight:700;color:{color};">'
@@ -545,7 +421,7 @@ def render_sources(hits: list[dict]):
 
             st.progress(score)
 
-            preview = hit["document"].replace("\n", " ").strip()
+            preview = document.replace("\n", " ").strip()
             preview = (preview[:420] + "…") if len(preview) > 420 else preview
             st.markdown(
                 f'<p style="font-size:0.83rem;color:#4B5563;line-height:1.55;'
@@ -553,7 +429,7 @@ def render_sources(hits: list[dict]):
                 unsafe_allow_html=True,
             )
             st.markdown(
-                f'<a href="{hit["url"]}" target="_blank" '
+                f'<a href="{url}" target="_blank" '
                 f'style="font-size:0.82rem;color:#00A693;font-weight:600;'
                 f'text-decoration:none;">Read full article →</a>',
                 unsafe_allow_html=True,
@@ -562,22 +438,22 @@ def render_sources(hits: list[dict]):
 
 # ─── Load resources ───────────────────────────────────────────────────────────
 with st.spinner("Loading knowledge base…"):
-    collection, embed_model, load_status = load_resources()
+    kb_store = get_kb_store()
+    query_service = QueryService(config, kb_store)
 
-kb_stats = load_kb_stats()
+kb_stats = get_kb_stats()
 
-# Determine counts for sidebar — prefer articles.json, fall back to collection
-total_articles = kb_stats["total"] or (collection.count() if collection else 0)
+total_articles = kb_stats["total"] or (kb_store._collection.count() if kb_store._collection else 0)
 total_categories = kb_stats["categories"]
 
-db_ok      = load_status == "ok"
-groq_ok    = bool(GROQ_API_KEY)
-gemini_ok  = bool(GEMINI_API_KEY)
-llm_ok     = groq_ok or gemini_ok   # app is usable if either provider is configured
+db_ok = kb_store.is_ready
+load_status = kb_store.status
+groq_ok = config.groq_ok
+gemini_ok = config.gemini_ok
+llm_ok = config.llm_ok
 
 # ─── Sidebar ──────────────────────────────────────────────────────────────────
 with st.sidebar:
-
     # Logo + branding
     st.markdown(
         """
@@ -601,16 +477,20 @@ with st.sidebar:
         'letter-spacing:0.8px;margin-bottom:0.6rem;">System Status</div>',
         unsafe_allow_html=True,
     )
-    db_dot     = '<span class="dot-green">●</span>' if db_ok     else '<span class="dot-red">●</span>'
-    groq_dot   = '<span class="dot-green">●</span>' if groq_ok   else '<span class="dot-amber">●</span>'
-    gemini_dot = '<span class="dot-green">●</span>' if gemini_ok else '<span class="dot-amber">●</span>'
+    db_dot = '<span class="dot-green">●</span>' if db_ok else '<span class="dot-red">●</span>'
+    groq_dot = '<span class="dot-green">●</span>' if groq_ok else '<span class="dot-amber">●</span>'
+    gemini_dot = (
+        '<span class="dot-green">●</span>' if gemini_ok else '<span class="dot-amber">●</span>'
+    )
 
-    groq_label   = f'Ready — {GROQ_MODEL}' if groq_ok   else 'No key (rate-limit fallback)'
-    gemini_label = f'Ready — {GEMINI_MODEL}' if gemini_ok else 'No key (configure for fallback)'
+    groq_label = f"Ready — {config.groq_model}" if groq_ok else "No key (rate-limit fallback)"
+    gemini_label = (
+        f"Ready — {config.gemini_model}" if gemini_ok else "No key (configure for fallback)"
+    )
 
     st.markdown(
         f'<div class="status-row">{db_dot}     &nbsp;Vector DB&nbsp;&nbsp;'
-        f'<span style="color:#475569;">{'Connected' if db_ok else 'Not found'}</span></div>'
+        f'<span style="color:#475569;">{"Connected" if db_ok else "Not found"}</span></div>'
         f'<div class="status-row">{groq_dot}   &nbsp;Groq (primary)&nbsp;&nbsp;'
         f'<span style="color:#475569;">{groq_label}</span></div>'
         f'<div class="status-row">{gemini_dot} &nbsp;Gemini (fallback)&nbsp;&nbsp;'
@@ -658,12 +538,15 @@ with st.sidebar:
         'letter-spacing:0.8px;margin-bottom:0.5rem;">Model</div>',
         unsafe_allow_html=True,
     )
-    active_model = GROQ_MODEL if groq_ok else GEMINI_MODEL
+    active_model = config.groq_model if groq_ok else config.gemini_model
     st.markdown(
-        f'<div style="font-size:0.8rem;color:#94A3B8;">🤖 `{active_model}`</div>'
-        f'<div style="font-size:0.8rem;color:#94A3B8;margin-top:0.2rem;">↩ Fallback: `{GEMINI_MODEL}`</div>'
-        f'<div style="font-size:0.8rem;color:#94A3B8;margin-top:0.2rem;">🔍 `{EMBED_MODEL}`</div>'
-        f'<div style="font-size:0.8rem;color:#94A3B8;margin-top:0.2rem;">Top-K results: `{TOP_K}`</div>',
+        f'<div style="font-size:0.8rem;color:#94A3B8;">🤖 `{active_model}`</div>\n'
+        f'<div style="font-size:0.8rem;color:#94A3B8;margin-top:0.2rem;">'
+        f'↩ Fallback: `{config.gemini_model}`</div>\n'
+        f'<div style="font-size:0.8rem;color:#94A3B8;margin-top:0.2rem;">'
+        f'🔍 `{config.embed_model}`</div>\n'
+        f'<div style="font-size:0.8rem;color:#94A3B8;margin-top:0.2rem;">'
+        f'Top-K results: `{config.top_k}`</div>',
         unsafe_allow_html=True,
     )
 
@@ -674,16 +557,18 @@ with st.sidebar:
         st.error(
             "**No LLM keys configured.**\n\n"
             "Add at least one key to `.streamlit/secrets.toml`:\n"
-            "```\nGROQ_API_KEY   = \"gsk_...\"   # console.groq.com\n"
-            "GEMINI_API_KEY = \"AIza...\"  # aistudio.google.com\n```"
+            '```\nGROQ_API_KEY   = "gsk_..."   # console.groq.com\n'
+            'GEMINI_API_KEY = "AIza..."  # aistudio.google.com\n```'
         )
     else:
         key_info = []
-        if groq_ok:   key_info.append("Groq ✓")
-        if gemini_ok: key_info.append("Gemini ✓")
+        if groq_ok:
+            key_info.append("Groq ✓")
+        if gemini_ok:
+            key_info.append("Gemini ✓")
         st.markdown(
             f'<div style="font-size:0.75rem;color:#475569;padding:0.25rem 0;">'
-            f'🔑 {" · ".join(key_info)} — shared for all users</div>',
+            f"🔑 {' · '.join(key_info)} — shared for all users</div>",
             unsafe_allow_html=True,
         )
 
@@ -691,9 +576,7 @@ with st.sidebar:
 
     # Clear conversation
     if st.button("🗑️  Clear Conversation", use_container_width=True):
-        st.session_state.messages = [
-            {"role": "assistant", "content": WELCOME_MESSAGE, "hits": []}
-        ]
+        st.session_state.messages = [{"role": "assistant", "content": WELCOME_MESSAGE, "hits": []}]
         st.session_state.pending_query = None
         st.rerun()
 
@@ -701,16 +584,14 @@ with st.sidebar:
     st.markdown(
         '<div style="font-size:0.7rem;color:#334155;text-align:center;'
         'margin-top:2rem;padding:0.5rem;border-top:1px solid rgba(255,255,255,0.06);">'
-        'Powered by ChromaDB · sentence-transformers<br>Groq GPT-OSS 120B · Gemini 2.0 Flash</div>',
+        "Powered by ChromaDB · sentence-transformers<br>Groq GPT-OSS 120B · Gemini 2.0 Flash</div>",
         unsafe_allow_html=True,
     )
 
 
 # ─── Session state init ───────────────────────────────────────────────────────
 if "messages" not in st.session_state:
-    st.session_state.messages = [
-        {"role": "assistant", "content": WELCOME_MESSAGE, "hits": []}
-    ]
+    st.session_state.messages = [{"role": "assistant", "content": WELCOME_MESSAGE, "hits": []}]
 if "pending_query" not in st.session_state:
     st.session_state.pending_query = None
 
@@ -718,7 +599,7 @@ if "pending_query" not in st.session_state:
 # ─── Main content ─────────────────────────────────────────────────────────────
 
 # Header
-_badge_provider = f"Groq {GROQ_MODEL}" if groq_ok else f"Gemini {GEMINI_MODEL}"
+_badge_provider = f"Groq {config.groq_model}" if groq_ok else f"Gemini {config.gemini_model}"
 st.markdown(
     f"""
     <div class="kb-header">
@@ -774,7 +655,7 @@ if is_first_message:
 # ── Chat input ───────────────────────────────────────────────────────────────
 user_input = st.chat_input(
     "E.g. How do I update my bank account?",
-    disabled=not llm_ok,   # disabled only if BOTH keys are missing
+    disabled=not llm_ok,  # disabled only if BOTH keys are missing
 )
 
 # Merge chat input with pending query from chips
@@ -791,118 +672,68 @@ if user_query:
 
     # Assistant response
     with st.chat_message("assistant", avatar="💚"):
-
-        # Step 1: Retrieve
         with st.spinner("🔍 Searching knowledge base…"):
-            hits = retrieve_contexts(user_query, collection, embed_model)
+            response = query_service.handle_query(user_query)
 
-        if not hits:
-            error_msg = (
-                "I couldn't find any relevant articles for your question. "
-                "Please try rephrasing, or contact "
-                "[Scripbox Support](https://help.scripbox.com) directly."
-            )
-            st.warning(error_msg)
+        answer: str | None = None
+
+        if response.status == "validation_error":
+            st.warning(response.error_message or "Please enter a valid query.")
             st.session_state.messages.append(
-                {"role": "assistant", "content": error_msg, "hits": []}
+                {
+                    "role": "assistant",
+                    "content": response.error_message or "Please enter a valid query.",
+                    "hits": [],
+                }
             )
             st.stop()
 
-        # Step 2: Stream answer — Groq primary, Gemini automatic fallback
-        prompt = build_prompt(user_query, hits)
-        answer = None
-
-        # ── Try Groq first ────────────────────────────────────────────────────
-        if groq_ok:
-            try:
-                answer = st.write_stream(_groq_stream(prompt))
-            except Exception as exc:
-                err_text = str(exc)
-                is_rate_limit = "429" in err_text or "rate_limit" in err_text.lower()
-                is_auth_err   = "401" in err_text or "invalid_api_key" in err_text.lower()
-                is_model_err  = "404" in err_text or "model_not_found" in err_text.lower() or "decommissioned" in err_text.lower()
-
-                if (is_rate_limit or is_model_err) and gemini_ok:
-                    notice = (
-                        "⚡ Groq rate limit reached — seamlessly switching to Gemini fallback…"
-                        if is_rate_limit
-                        else f"⚠️ Groq model `{GROQ_MODEL}` unavailable or decommissioned — seamlessly switching to Gemini fallback…"
-                    )
-                    st.info(notice, icon="🔄")
-                    # answer will be filled by Gemini block below
-                elif is_auth_err:
-                    error_msg = (
-                        "**Groq authentication error.** The API key is invalid or expired. "
-                        "Please update `GROQ_API_KEY` in your Streamlit secrets."
-                    )
-                    st.error(error_msg)
-                    st.session_state.messages.append(
-                        {"role": "assistant", "content": error_msg, "hits": []}
-                    )
-                    st.stop()
-                elif is_model_err and not gemini_ok:
-                    error_msg = (
-                        f"**Groq Model Error:** The model `{GROQ_MODEL}` is not found or has been decommissioned on Groq.\n\n"
-                        "Please update `GROQ_MODEL` in your `.env` or `.streamlit/secrets.toml` to an active Groq model "
-                        "(e.g., `openai/gpt-oss-120b` or `openai/gpt-oss-20b`), or configure `GEMINI_API_KEY` for automatic fallback."
-                    )
-                    st.error(error_msg)
-                    st.session_state.messages.append(
-                        {"role": "assistant", "content": error_msg, "hits": []}
-                    )
-                    st.stop()
-                elif is_rate_limit and not gemini_ok:
-                    error_msg = (
-                        "**Groq rate limit reached** and no Gemini fallback is configured.\n\n"
-                        "Add `GEMINI_API_KEY` to your Streamlit secrets for automatic fallback. "
-                        "Get a free key at [aistudio.google.com](https://aistudio.google.com/apikey)."
-                    )
-                    st.error(error_msg)
-                    st.session_state.messages.append(
-                        {"role": "assistant", "content": error_msg, "hits": []}
-                    )
-                    st.stop()
-                else:
-                    error_msg = f"**Groq error:** {exc}"
-                    st.error(error_msg)
-                    st.session_state.messages.append(
-                        {"role": "assistant", "content": error_msg, "hits": []}
-                    )
-                    st.stop()
-
-        # ── Gemini: used as fallback (or primary if Groq key absent) ──────────
-        if answer is None and gemini_ok:
-            try:
-                answer = st.write_stream(_gemini_stream(prompt))
-            except Exception as exc:
-                err_text = str(exc)
-                if "429" in err_text or "quota" in err_text.lower():
-                    error_msg = (
-                        "**Both Groq and Gemini have hit their rate limits.**\n\n"
-                        "Please wait a few minutes and try again."
-                    )
-                elif "401" in err_text or "api_key" in err_text.lower():
-                    error_msg = (
-                        "**Gemini authentication error.** The API key is invalid. "
-                        "Please update `GEMINI_API_KEY` in your Streamlit secrets."
-                    )
-                else:
-                    error_msg = f"**Gemini error:** {exc}"
-                st.error(error_msg)
-                st.session_state.messages.append(
-                    {"role": "assistant", "content": error_msg, "hits": []}
-                )
-                st.stop()
-
-        if answer is None:
-            # Shouldn't reach here, but safeguard
-            st.error("No LLM provider available. Please check your API keys.")
+        elif response.status == "retrieval_failure":
+            st.error(f"**Knowledge base retrieval error:** {response.error_message}")
+            st.session_state.messages.append(
+                {
+                    "role": "assistant",
+                    "content": "Unable to search knowledge base right now. Please try again later.",
+                    "hits": [],
+                }
+            )
             st.stop()
 
-        # Step 3: Render sources inline (below the streamed answer)
-        render_sources(hits)
+        elif response.status == "abstained":
+            msg = response.answer_text or "No relevant articles found."
+            st.warning(msg)
+            st.session_state.messages.append({"role": "assistant", "content": msg, "hits": []})
+            st.stop()
 
-    # Persist to session state
-    st.session_state.messages.append(
-        {"role": "assistant", "content": answer, "hits": hits}
-    )
+        elif response.status == "provider_failure":
+            st.error(response.error_message or "AI service error. Please try again.")
+            st.session_state.messages.append(
+                {
+                    "role": "assistant",
+                    "content": response.error_message or "AI service error.",
+                    "hits": [],
+                }
+            )
+            st.stop()
+
+        elif response.status == "success":
+            if response.fallback_reason:
+                msg = (
+                    f"⚠️ {response.fallback_reason} — "
+                    f"switched to {response.provider_used} fallback."
+                )
+                st.info(msg, icon="🔄")
+
+            if response.answer_stream is not None:
+                answer = st.write_stream(response.answer_stream)
+            elif response.answer_text:
+                st.markdown(response.answer_text)
+                answer = response.answer_text
+
+            if response.sources:
+                render_sources(response.sources)
+
+        if answer:
+            st.session_state.messages.append(
+                {"role": "assistant", "content": answer, "hits": response.sources}
+            )
