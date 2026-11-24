@@ -1,3 +1,4 @@
+"""LLM provider streaming clients with fallback and a non-streaming call helper."""
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -25,7 +26,19 @@ class ProviderModelNotFoundError(ProviderError): ...
 class ProviderUnavailableError(ProviderError): ...
 
 
+def sanitize_error(exc: Exception) -> str:
+    """Sanitize provider exceptions into safe user-facing error messages."""
+    if isinstance(exc, ProviderRateLimitError):
+        return "Our AI providers are temporarily busy. Please try again in a moment."
+    elif isinstance(exc, ProviderAuthError):
+        return "There's a configuration issue with our AI service. Please contact support."
+    elif isinstance(exc, ProviderModelNotFoundError):
+        return "The AI model is temporarily unavailable. Please try again later."
+    return "An unexpected error occurred. Please try again."
+
+
 def classify_error(exc: Exception, provider: str) -> ProviderError:
+    """Map a raw exception to a typed ProviderError subclass."""
     err_text = str(exc).lower()
     if "429" in err_text or "rate_limit" in err_text:
         return ProviderRateLimitError(str(exc), provider, exc)
@@ -33,7 +46,6 @@ def classify_error(exc: Exception, provider: str) -> ProviderError:
         return ProviderAuthError(str(exc), provider, exc)
     if "404" in err_text or "model_not_found" in err_text or "decommissioned" in err_text:
         return ProviderModelNotFoundError(str(exc), provider, exc)
-
     return ProviderUnavailableError(str(exc), provider, exc)
 
 
@@ -46,6 +58,7 @@ def groq_stream(
     max_tokens: int = 1024,
     temperature: float = 0.2,
 ) -> Iterator[str]:
+    """Stream tokens from the Groq API."""
     from groq import Groq
 
     try:
@@ -68,15 +81,19 @@ def groq_stream(
         raise classify_error(e, "groq") from e
 
 
-def gemini_stream(prompt: str, *, api_key: str, model: str, system_prompt: str) -> Iterator[str]:
+def gemini_stream(
+    prompt: str,
+    *,
+    api_key: str,
+    model: str,
+    system_prompt: str,
+) -> Iterator[str]:
+    """Stream tokens from the Gemini API."""
     import google.generativeai as genai
 
     try:
         genai.configure(api_key=api_key)
-        genai_model = genai.GenerativeModel(
-            model,
-            system_instruction=system_prompt,
-        )
+        genai_model = genai.GenerativeModel(model, system_instruction=system_prompt)
         stream = genai_model.generate_content(prompt, stream=True)
         for chunk in stream:
             if chunk.text:
@@ -87,9 +104,11 @@ def gemini_stream(prompt: str, *, api_key: str, model: str, system_prompt: str) 
 
 @dataclass
 class ProviderResult:
-    provider: str  # "groq" or "gemini"
+    """Result from stream_with_fallback."""
+
+    provider: str
     stream: Iterator[str]
-    fallback_reason: str | None = None  # why we fell back, if applicable
+    fallback_reason: str | None = None
 
 
 def stream_with_fallback(
@@ -102,10 +121,12 @@ def stream_with_fallback(
     system_prompt: str,
     max_tokens: int = 1024,
 ) -> ProviderResult:
+    """Try Groq first; fall back to Gemini on rate-limit or model errors."""
     if not groq_api_key and not gemini_api_key:
         raise ProviderUnavailableError("No provider API keys configured.", "none")
 
     fallback_reason = None
+
     if groq_api_key:
         try:
             stream_gen = groq_stream(
@@ -115,17 +136,17 @@ def stream_with_fallback(
                 system_prompt=system_prompt,
                 max_tokens=max_tokens,
             )
-            # Try getting first element to trigger any initial errors.
             first_chunk = next(stream_gen)
 
             def chain_generator(first: str, gen: Iterator[str]) -> Iterator[str]:
                 yield first
                 yield from gen
 
-            return ProviderResult(provider="groq", stream=chain_generator(first_chunk, stream_gen))
-
+            return ProviderResult(
+                provider="groq", stream=chain_generator(first_chunk, stream_gen)
+            )
         except ProviderAuthError:
-            raise  # Don't silently fall back on bad auth
+            raise
         except (ProviderRateLimitError, ProviderModelNotFoundError) as e:
             fallback_reason = f"Groq fallback: {type(e).__name__}"
         except StopIteration:
@@ -136,9 +157,11 @@ def stream_with_fallback(
     if gemini_api_key:
         try:
             stream_gen = gemini_stream(
-                prompt, api_key=gemini_api_key, model=gemini_model, system_prompt=system_prompt
+                prompt,
+                api_key=gemini_api_key,
+                model=gemini_model,
+                system_prompt=system_prompt,
             )
-            # Ensure it works immediately
             first_chunk = next(stream_gen)
 
             def chain_generator(first: str, gen: Iterator[str]) -> Iterator[str]:
@@ -157,4 +180,46 @@ def stream_with_fallback(
         except Exception as e:
             raise classify_error(e, "gemini") from e
 
-    raise ProviderUnavailableError("Providers failed or unavailable.", "none")
+    raise ProviderUnavailableError("All providers failed or unavailable.", "none")
+
+
+def call_once(
+    prompt: str,
+    *,
+    groq_api_key: str,
+    gemini_api_key: str,
+    groq_model: str,
+    gemini_model: str,
+    system_prompt: str,
+    max_tokens: int = 150,
+) -> str:
+    """Non-streaming LLM call. Returns the full response as a string.
+
+    Used for lightweight tasks like query rewriting that don't need streaming.
+    Falls back gracefully to empty string on provider failure.
+
+    Args:
+        prompt: The user prompt.
+        groq_api_key: Groq API key.
+        gemini_api_key: Gemini API key.
+        groq_model: Groq model identifier.
+        gemini_model: Gemini model identifier.
+        system_prompt: System instruction for the model.
+        max_tokens: Maximum tokens in the response.
+
+    Returns:
+        Complete response string, or empty string on failure.
+    """
+    try:
+        result = stream_with_fallback(
+            prompt=prompt,
+            groq_api_key=groq_api_key,
+            gemini_api_key=gemini_api_key,
+            groq_model=groq_model,
+            gemini_model=gemini_model,
+            system_prompt=system_prompt,
+            max_tokens=max_tokens,
+        )
+        return "".join(result.stream).strip()
+    except ProviderError:
+        return ""

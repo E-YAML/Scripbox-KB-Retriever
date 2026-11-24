@@ -38,3 +38,18 @@ jobs:
       - name: Run tests (pytest)
         run: |
           python -m pytest tests/ -v
+
+      - name: Run evaluation gate (recall & abstention gates)
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          QDRANT_URL: ${{ secrets.QDRANT_URL }}
+          QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
+          VECTOR_DB_TYPE: ${{ secrets.VECTOR_DB_TYPE || 'qdrant' }}
+        run: |
+          if [ -n "$QDRANT_URL" ] && [ -n "$GROQ_API_KEY" ]; then
+            echo "Running evaluation gate against live endpoints..."
+            python -m eval.runner
+          else
+            echo "External secrets not present; running evaluation gate in mock mode..."
+            python -m eval.runner --mock
+          fi

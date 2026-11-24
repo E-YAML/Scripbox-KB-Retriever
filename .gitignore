@@ -7,6 +7,8 @@
 # Generated data (re-create with scraper.py + build_index.py)
 articles.json
 chroma_db/
+data/releases/
+eval/results/
 
 # Python artifacts
 __pycache__/

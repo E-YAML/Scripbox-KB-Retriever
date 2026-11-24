@@ -116,6 +116,29 @@ class TestQueryService(unittest.TestCase):
         msg = self.service._sanitize_error(Exception("error"))
         self.assertEqual(msg, "An unexpected error occurred. Please try again.")
 
+    def test_handle_query_concurrency_timeout(self):
+        cfg = AppConfig(
+            groq_api_key="test-key",
+            gemini_api_key="test-key",
+            groq_model="test-model",
+            gemini_model="test-model",
+            top_k=5,
+            max_input_length=2000,
+            max_context_chars=1800,
+            max_output_tokens=1024,
+            max_concurrency=1,
+            concurrency_timeout=0.01,
+        )
+        service = QueryService(cfg, self.mock_kb)
+        service._semaphore.acquire()
+
+        response = service.handle_query("test query")
+
+        self.assertEqual(response.status, "provider_failure")
+        self.assertIn("currently assisting other users", response.error_message)
+
+        service._semaphore.release()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -27,7 +27,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
     menu_items={
         "Get Help": "https://help.scripbox.com",
-        "About": "Scripbox KB Assistant — RAG powered by ChromaDB + Groq GPT-OSS 120B",
+        "About": "Scripbox KB Assistant — LangGraph cyclic RAG powered by ChromaDB/Qdrant + Groq + Gemini",
     },
 )
 
@@ -490,7 +490,7 @@ with st.sidebar:
 
     st.markdown(
         f'<div class="status-row">{db_dot}     &nbsp;Vector DB&nbsp;&nbsp;'
-        f'<span style="color:#475569;">{"Connected" if db_ok else "Not found"}</span></div>'
+        f'<span style="color:#475569;">{("Connected · " + config.vector_db_type.upper()) if db_ok else "Not found"}</span></div>'
         f'<div class="status-row">{groq_dot}   &nbsp;Groq (primary)&nbsp;&nbsp;'
         f'<span style="color:#475569;">{groq_label}</span></div>'
         f'<div class="status-row">{gemini_dot} &nbsp;Gemini (fallback)&nbsp;&nbsp;'
@@ -584,7 +584,7 @@ with st.sidebar:
     st.markdown(
         '<div style="font-size:0.7rem;color:#334155;text-align:center;'
         'margin-top:2rem;padding:0.5rem;border-top:1px solid rgba(255,255,255,0.06);">'
-        "Powered by ChromaDB · sentence-transformers<br>Groq GPT-OSS 120B · Gemini 2.0 Flash</div>",
+        "LangGraph cyclic RAG · ChromaDB/Qdrant<br>Groq GPT-OSS 120B · Gemini 2.5 Flash</div>",
         unsafe_allow_html=True,
     )
 
@@ -723,6 +723,14 @@ if user_query:
                     f"switched to {response.provider_used} fallback."
                 )
                 st.info(msg, icon="🔄")
+            # Surface query rewrite if the graph rewrote the query
+            if getattr(response, "rewrite_count", 0) > 0:
+                st.info(
+                    f"🔍 Refined search query ×{response.rewrite_count} "
+                    f"for better retrieval coverage.",
+                    icon="🔄",
+                )
+
 
             if response.answer_stream is not None:
                 answer = st.write_stream(response.answer_stream)

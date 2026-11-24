@@ -339,14 +339,14 @@ Extract from `app.py` (query handling, orchestration, validation):
 
 #### 2.1 Chunk-level indexing
 
-- [ ] Design chunk schema: `chunk_id`, `article_id`, `title`, `url`, `category`, `folder`, `section_header`, `content`, `content_hash`, `chunk_position`, `chunk_total`.
-- [ ] Implement overlapping semantic chunker (configurable chunk size ~500 tokens, overlap ~100 tokens).
+- [x] Design chunk schema: `chunk_id`, `article_id`, `title`, `url`, `category`, `folder`, `section_header`, `content`, `content_hash`, `chunk_position`, `chunk_total`.
+- [x] Implement overlapping semantic chunker (configurable chunk size ~500 tokens, overlap ~100 tokens).
 - [ ] Update `build_index.py` to produce chunk-level documents with full metadata.
-- [ ] Retain article title/URL/category as metadata on every chunk.
+- [x] Retain article title/URL/category as metadata on every chunk.
 
 #### 2.2 Retrieval improvements
 
-- [ ] Increase candidate retrieval count (e.g. top-20) then deduplicate by article before passing to LLM.
+- [x] Increase candidate retrieval count (e.g. top-20) then deduplicate by article before passing to LLM.
 - [ ] Add configurable distance threshold for `insufficient_context` decision.
 - [ ] Replace `1 - distance` "Relevance %" display with transparent "Retrieved sources" presentation.
 - [ ] Remove `_score_color` / relevance bar — show source cards without misleading percentages.
@@ -354,7 +354,7 @@ Extract from `app.py` (query handling, orchestration, validation):
 #### 2.3 Abstention and citations
 
 - [ ] Implement deterministic `insufficient_context` response when no chunk passes threshold.
-- [ ] Add support escalation message for abstention cases.
+- [x] Add support escalation message for abstention cases.
 - [ ] Require LLM response to cite source IDs; map IDs to user-visible article links.
 - [ ] Update `prompting.py` with citation instructions in system prompt.
 
@@ -416,9 +416,9 @@ Extract from `app.py` (query handling, orchestration, validation):
 
 #### 4.1 Observability module — `observability.py`
 
-- [ ] Implement structured JSON event logger with request ID and timestamps.
-- [ ] Log events: app startup, active KB release, resource/model load, retrieval (duration, candidate count, source IDs, confidence decision), provider (selected, fallback reason, TTFT, total duration, error class), final response state.
-- [ ] Ensure raw API keys, prompts, user messages, and completions are NOT logged.
+- [x] Implement structured JSON event logger with request ID and timestamps.
+- [x] Log events: app startup, active KB release, resource/model load, retrieval (duration, candidate count, source IDs, confidence decision), provider (selected, fallback reason, TTFT, total duration, error class), final response state.
+- [x] Ensure raw API keys, prompts, user messages, and completions are NOT logged.
 
 #### 4.2 Health and degraded states
 
