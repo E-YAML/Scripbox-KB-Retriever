@@ -103,7 +103,7 @@ class _QdrantBackend:
     def __init__(self, url: str, api_key: str, collection_name: str) -> None:
         from qdrant_client import QdrantClient
 
-        self._client = QdrantClient(url=url, api_key=api_key, timeout=10)
+        self._client = QdrantClient(url=url, api_key=api_key, timeout=30)
         self._collection_name = collection_name
 
     def search(
@@ -114,23 +114,40 @@ class _QdrantBackend:
         Qdrant returns cosine *similarity* scores (1 = identical).
         We convert to distance = 1 - similarity for uniform handling.
         """
-        # Modern Qdrant client uses query_points, older uses search
-        if hasattr(self._client, "query_points"):
-            res = self._client.query_points(
-                collection_name=self._collection_name,
-                query=query_vector,
-                limit=top_k,
-                with_payload=True,
-            )
-            points = res.points
-        else:
-            search_fn = getattr(self._client, "search")  # noqa: B009
-            points = search_fn(
-                collection_name=self._collection_name,
-                query_vector=query_vector,
-                limit=top_k,
-                with_payload=True,
-            )
+        import time
+
+        last_exc: Exception | None = None
+        points = None
+
+        for attempt in range(2):
+            try:
+                # Modern Qdrant client uses query_points, older uses search
+                if hasattr(self._client, "query_points"):
+                    res = self._client.query_points(
+                        collection_name=self._collection_name,
+                        query=query_vector,
+                        limit=top_k,
+                        with_payload=True,
+                    )
+                    points = res.points
+                else:
+                    search_fn = getattr(self._client, "search")  # noqa: B009
+                    points = search_fn(
+                        collection_name=self._collection_name,
+                        query_vector=query_vector,
+                        limit=top_k,
+                        with_payload=True,
+                    )
+                break
+            except Exception as exc:
+                last_exc = exc
+                if attempt == 0:
+                    time.sleep(0.5)
+
+        if points is None:
+            if last_exc:
+                raise last_exc
+            points = []
 
         output: list[tuple[str, dict[str, Any], float]] = []
         for r in points:
@@ -169,6 +186,7 @@ class KBStore:
         self._qdrant_api_key = qdrant_api_key
 
         self._backend: _ChromaBackend | _QdrantBackend | None = None
+        self._fallback_backend: _ChromaBackend | None = None
         self._embed_model: Any = None
         self._status: str = "not_loaded"
 
@@ -194,6 +212,14 @@ class KBStore:
             except Exception as exc:
                 self._status = f"qdrant_error:{exc}"
                 raise CollectionError(f"Failed to connect to Qdrant: {exc}") from exc
+
+            # Optional local ChromaDB fallback if available
+            db_path = Path(self.chroma_dir)
+            if db_path.exists():
+                try:
+                    self._fallback_backend = _ChromaBackend(str(db_path), "scripbox_kb")
+                except Exception:
+                    self._fallback_backend = None
         else:
             db_path = Path(self.chroma_dir)
             if not db_path.exists():
@@ -247,7 +273,16 @@ class KBStore:
             raise KBUnavailableError("KB Store is not loaded. Call load() first.")
 
         qv: list[float] = self._embed_model.encode(query).tolist()
-        raw = self._backend.search(qv, top_k)  # type: ignore[union-attr]
+        try:
+            raw = self._backend.search(qv, top_k)  # type: ignore[union-attr]
+        except Exception as exc:
+            if self._fallback_backend is not None:
+                try:
+                    raw = self._fallback_backend.search(qv, top_k)
+                except Exception:
+                    raise exc from exc
+            else:
+                raise exc from exc
 
         hits: list[RetrievalHit] = []
         for doc, meta, distance in raw:

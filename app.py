@@ -689,11 +689,19 @@ if user_query:
             st.stop()
 
         elif response.status == "retrieval_failure":
-            st.error(f"**Knowledge base retrieval error:** {response.error_message}")
+            err_raw = str(response.error_message or "").lower()
+            if "timed out" in err_raw or "timeout" in err_raw:
+                user_msg = (
+                    "Knowledge base search timed out while connecting to the database. "
+                    "Please try submitting your question again."
+                )
+            else:
+                user_msg = "Unable to search knowledge base right now. Please try again later."
+            st.error(f"**Knowledge base search error:** {user_msg}")
             st.session_state.messages.append(
                 {
                     "role": "assistant",
-                    "content": "Unable to search knowledge base right now. Please try again later.",
+                    "content": user_msg,
                     "hits": [],
                 }
             )
