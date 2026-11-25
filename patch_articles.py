@@ -16,11 +16,12 @@ Usage:
 """
 
 import json
-import time
 import re
+import time
+from urllib.parse import urljoin
+
 import requests
 from bs4 import BeautifulSoup
-from urllib.parse import urljoin
 
 BASE_URL = "https://help.scripbox.com"
 OUTPUT_FILE = "articles.json"
@@ -112,7 +113,9 @@ def extract_content(soup):
             ".related-articles, .popular-articles, .sidebar, .toc"
         ):
             tag.decompose()
-        lines = [ln.strip() for ln in el.get_text(separator="\n", strip=True).splitlines() if ln.strip()]
+        lines = [
+            ln.strip() for ln in el.get_text(separator="\n", strip=True).splitlines() if ln.strip()
+        ]
         noise_exact = {
             "All Articles",
             "Recent Searches",
@@ -173,8 +176,10 @@ def scrape_one(url, category="", folder=""):
     title = h1.get_text(strip=True) if h1 else ""
     content = extract_content(soup)
     if content.startswith(title) and title:
-        content = content[len(title):].strip()
-    meta = soup.find("meta", attrs={"name": "description"}) or soup.find("meta", attrs={"property": "og:description"})
+        content = content[len(title) :].strip()
+    meta = soup.find("meta", attrs={"name": "description"}) or soup.find(
+        "meta", attrs={"property": "og:description"}
+    )
     meta_desc = meta["content"].strip() if meta and meta.get("content") else ""
     # Try to detect category/folder from breadcrumbs
     if not category:
@@ -197,7 +202,7 @@ def scrape_one(url, category="", folder=""):
 
 def main():
     # Load existing articles
-    with open(OUTPUT_FILE, "r", encoding="utf-8") as f:
+    with open(OUTPUT_FILE, encoding="utf-8") as f:
         existing = json.load(f)
     existing_ids = {a["id"] for a in existing}
     existing_urls = {a["url"] for a in existing}
@@ -206,7 +211,8 @@ def main():
     # Repair step: re-scrape articles that have placeholder/short content
     placeholders = {"popular articles", "popular article", ""}
     to_repair = [
-        a for a in existing
+        a
+        for a in existing
         if (a.get("content", "") or "").strip().lower() in placeholders
         or len((a.get("content", "") or "").strip()) < 80
     ]
@@ -222,7 +228,7 @@ def main():
             if fresh and fresh.get("content") and len(fresh["content"].strip()) >= 80:
                 a.update(fresh)
                 repaired += 1
-                print(f"  OK repaired: {a.get('title','')}")
+                print(f"  OK repaired: {a.get('title', '')}")
             else:
                 print("  ~ still empty/short, leaving as-is")
         print(f"Repaired {repaired}/{len(to_repair)}")
@@ -249,11 +255,11 @@ def main():
             if art["id"] not in existing_ids:
                 new_articles.append(art)
                 existing_ids.add(art["id"])
-                print(f"  + \"{art['title']}\"")
+                print(f'  + "{art["title"]}"')
             else:
-                print(f"  ~ already exists (same ID)")
+                print("  ~ already exists (same ID)")
         else:
-            print(f"  ✗ skipped")
+            print("  ✗ skipped")
 
     if not new_articles:
         print("\nNo new articles to add. Index is up to date!")
@@ -267,8 +273,10 @@ def main():
 
     # Rebuild index
     print("\nRebuilding vector index...")
-    import subprocess, sys
-    result = subprocess.run([sys.executable, "build_index.py"], check=True)
+    import subprocess
+    import sys
+
+    subprocess.run([sys.executable, "build_index.py"], check=True)
     print("Index rebuilt successfully!")
 
 

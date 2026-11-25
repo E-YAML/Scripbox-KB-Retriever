@@ -1,0 +1,35 @@
+# Git and OS artifacts
+.git
+.gitignore
+.DS_Store
+Thumbs.db
+
+# Secrets & Local credentials (NEVER bake secrets into image)
+.env
+.streamlit/secrets.toml
+secrets.toml
+
+# Python & bytecode
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.egg-info
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv
+venv
+env
+
+# Local index & test releases
+chroma_db
+chroma_db/
+data/
+eval/results/
+eval/
+tests/

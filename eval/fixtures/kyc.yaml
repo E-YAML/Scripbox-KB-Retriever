@@ -1,0 +1,83 @@
+# Eval fixtures: KYC and account management questions
+# Format:
+#   id: unique case identifier
+#   query: user question
+#   expected_sources: list of URL substrings that should appear in top-5 results
+#   required_facts: keywords/phrases that SHOULD appear in the answer
+#   should_abstain: true if the query should be refused (not applicable here)
+
+cases:
+  - id: kyc_001
+    query: "How do I complete my KYC on Scripbox?"
+    expected_sources:
+      - "kyc"
+    required_facts:
+      - "PAN"
+      - "KYC"
+    should_abstain: false
+
+  - id: kyc_002
+    query: "What documents are needed for KYC verification?"
+    expected_sources:
+      - "kyc"
+    required_facts:
+      - "PAN"
+      - "Aadhaar"
+    should_abstain: false
+
+  - id: kyc_003
+    query: "My KYC is pending — what should I do?"
+    expected_sources:
+      - "kyc"
+    required_facts:
+      - "KYC"
+    should_abstain: false
+
+  - id: bank_001
+    query: "How do I update my bank account details on Scripbox?"
+    expected_sources:
+      - "bank"
+    required_facts:
+      - "bank"
+    should_abstain: false
+
+  - id: bank_002
+    query: "Can I add multiple bank accounts to my Scripbox account?"
+    expected_sources:
+      - "bank"
+    required_facts:
+      - "bank"
+    should_abstain: false
+
+  - id: login_001
+    query: "I forgot my Scripbox password, how do I reset it?"
+    expected_sources: []
+    required_facts:
+      - "password"
+    should_abstain: false
+
+  - id: minor_001
+    query: "Can I invest on behalf of my child on Scripbox?"
+    expected_sources:
+      - "child"
+      - "minor"
+    required_facts:
+      - "minor"
+    should_abstain: false
+
+  - id: nri_canada_001
+    query: "can my canadian citizen daughter join ?"
+    expected_sources:
+      - "nri"
+      - "child"
+    required_facts:
+      - "Canada"
+    should_abstain: false
+
+  - id: nri_us_001
+    query: "Can US citizens open an account on Scripbox?"
+    expected_sources:
+      - "nri"
+    required_facts:
+      - "US"
+    should_abstain: false

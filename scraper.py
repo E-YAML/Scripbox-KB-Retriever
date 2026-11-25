@@ -10,17 +10,18 @@ Strategy:
   4. Save as structured JSON
 """
 
-import requests
 import json
-import time
 import re
-from bs4 import BeautifulSoup
+import time
 from urllib.parse import urljoin
 
-BASE_URL    = "https://help.scripbox.com"
+import requests
+from bs4 import BeautifulSoup
+
+BASE_URL = "https://help.scripbox.com"
 SOLUTIONS_URL = f"{BASE_URL}/support/solutions"
 OUTPUT_FILE = "articles.json"
-DELAY       = 0.5   # seconds between requests
+DELAY = 0.5  # seconds between requests
 
 HEADERS = {
     "User-Agent": (
@@ -36,6 +37,7 @@ session.headers.update(HEADERS)
 
 
 # ── HTTP helpers ─────────────────────────────────────────────────────────────
+
 
 def get(url: str) -> BeautifulSoup | None:
     """Fetch a URL and return a BeautifulSoup object, or None on error."""
@@ -136,7 +138,7 @@ def discover_article_urls(folders: dict[str, dict]) -> list[tuple[str, str, str]
     seen = set()
 
     for folder_url, meta in folders.items():
-        cat_name    = meta["category"]
+        cat_name = meta["category"]
         folder_name = meta["folder"]
 
         # Folder pages may be paginated
@@ -182,8 +184,10 @@ def discover_article_urls(folders: dict[str, dict]) -> list[tuple[str, str, str]
 
 # ── Article scraping ──────────────────────────────────────────────────────────
 
+
 def extract_article_content(soup: BeautifulSoup) -> str:
     """Extract clean body text from a Freshdesk article page."""
+
     def _clean_text(el: "BeautifulSoup") -> str:
         for tag in el.select(
             "script, style, nav, header, footer, "
@@ -191,7 +195,9 @@ def extract_article_content(soup: BeautifulSoup) -> str:
             ".related-articles, .popular-articles, .sidebar, .toc"
         ):
             tag.decompose()
-        lines = [ln.strip() for ln in el.get_text(separator="\n", strip=True).splitlines() if ln.strip()]
+        lines = [
+            ln.strip() for ln in el.get_text(separator="\n", strip=True).splitlines() if ln.strip()
+        ]
         # Drop common portal chrome / nav strings that sometimes leak into the body.
         noise_exact = {
             "All Articles",
@@ -275,7 +281,7 @@ def scrape_article(url: str, category: str = "", folder: str = "") -> dict | Non
 
     # Remove leading duplicate title from content
     if content.startswith(title) and title:
-        content = content[len(title):].strip()
+        content = content[len(title) :].strip()
 
     # Meta description
     meta = soup.find("meta", attrs={"name": "description"}) or soup.find(
@@ -284,17 +290,18 @@ def scrape_article(url: str, category: str = "", folder: str = "") -> dict | Non
     meta_desc = meta["content"].strip() if meta and meta.get("content") else ""
 
     return {
-        "id":               article_id,
-        "title":            title,
-        "url":              url,
-        "category":         category,
-        "folder":           folder,
+        "id": article_id,
+        "title": title,
+        "url": url,
+        "category": category,
+        "folder": folder,
         "meta_description": meta_desc,
-        "content":          content,
+        "content": content,
     }
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────
+
 
 def main():
     # Phase 1: discover folders
@@ -315,17 +322,17 @@ def main():
         if art:
             articles.append(art)
             char_count = len(art["content"])
-            print(f"        ✓ \"{art['title']}\" ({char_count} chars)")
+            print(f'        ✓ "{art["title"]}" ({char_count} chars)')
         else:
-            print(f"        ✗ skipped")
+            print("        ✗ skipped")
 
     # Save
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         json.dump(articles, f, ensure_ascii=False, indent=2)
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"✅ Done! Saved {len(articles)} articles → {OUTPUT_FILE}")
-    print(f"   Next step: python build_index.py")
+    print("   Next step: python build_index.py")
 
 
 if __name__ == "__main__":

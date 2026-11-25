@@ -1,0 +1,26 @@
+services:
+  scripbox-kb:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: scripbox-kb-retriever:v2
+    container_name: scripbox-kb-retriever
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    environment:
+      - VECTOR_DB_TYPE=qdrant
+      - QDRANT_URL=${QDRANT_URL}
+      - QDRANT_API_KEY=${QDRANT_API_KEY}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GROQ_MODEL=${GROQ_MODEL:-openai/gpt-oss-120b}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
+      - TOP_K=${TOP_K:-5}
+      - RETRIEVAL_THRESHOLD=${RETRIEVAL_THRESHOLD:-0.35}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
