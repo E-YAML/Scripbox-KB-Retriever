@@ -103,7 +103,7 @@ class _QdrantBackend:
     def __init__(self, url: str, api_key: str, collection_name: str) -> None:
         from qdrant_client import QdrantClient
 
-        self._client = QdrantClient(url=url, api_key=api_key, timeout=30)
+        self._client = QdrantClient(url=url, api_key=api_key, timeout=30, prefer_grpc=False)
         self._collection_name = collection_name
 
     def search(
