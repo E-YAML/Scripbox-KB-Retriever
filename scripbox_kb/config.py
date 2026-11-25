@@ -1,4 +1,5 @@
 """Configuration module for the Scripbox KB Retriever application."""
+
 from __future__ import annotations
 
 import json
@@ -20,8 +21,8 @@ class AppConfig:
     embed_model: str = "all-MiniLM-L6-v2"
 
     # ── Retrieval settings ─────────────────────────────────────────────────────
-    top_k: int = 5                     # final sources shown / passed to LLM
-    retrieval_candidates: int = 20     # over-fetch before dedup + threshold filter
+    top_k: int = 5  # final sources shown / passed to LLM
+    retrieval_candidates: int = 20  # over-fetch before dedup + threshold filter
     retrieval_threshold: float = 0.35  # min cosine similarity to pass grading
 
     # ── LLM limits ─────────────────────────────────────────────────────────────
@@ -36,15 +37,15 @@ class AppConfig:
     gemini_model: str = "gemini-2.5-flash"
 
     # ── Vector DB backend ──────────────────────────────────────────────────────
-    vector_db_type: str = "chroma"     # "chroma" | "qdrant"
+    vector_db_type: str = "chroma"  # "chroma" | "qdrant"
     qdrant_url: str = ""
     qdrant_api_key: str = ""
 
     # ── Graph settings ─────────────────────────────────────────────────────────
-    max_rewrites: int = 2              # max query-rewrite cycles before abstaining
+    max_rewrites: int = 2  # max query-rewrite cycles before abstaining
 
     # ── Reliability & Concurrency ──────────────────────────────────────────────
-    max_concurrency: int = 4           # max simultaneous active queries
+    max_concurrency: int = 4  # max simultaneous active queries
     concurrency_timeout: float = 15.0  # seconds to wait for a slot before returning busy
 
     # ── Properties ─────────────────────────────────────────────────────────────
@@ -91,6 +92,7 @@ def resolve_key(secret_name: str) -> str:
     # Fallback to direct reading of .streamlit/secrets.toml
     try:
         import tomllib
+
         secrets_path = Path(".streamlit/secrets.toml")
         if secrets_path.exists():
             with open(secrets_path, "rb") as f:
@@ -147,11 +149,15 @@ def load_config() -> AppConfig:
     current_rel_file = Path("data/releases/current.json")
     if current_rel_file.exists():
         try:
-            with open(current_rel_file, "r", encoding="utf-8") as f:
+            with open(current_rel_file, encoding="utf-8") as f:
                 rel_meta = json.load(f)
             if "collection_name" in rel_meta and not resolve_key("COLLECTION_NAME"):
                 kwargs["collection_name"] = rel_meta["collection_name"]
-            if "chroma_dir" in rel_meta and rel_meta["chroma_dir"] and not resolve_key("CHROMA_DIR"):
+            if (
+                "chroma_dir" in rel_meta
+                and rel_meta["chroma_dir"]
+                and not resolve_key("CHROMA_DIR")
+            ):
                 kwargs["chroma_dir"] = rel_meta["chroma_dir"]
             if "articles_file" in rel_meta and not resolve_key("ARTICLES_FILE"):
                 kwargs["articles_file"] = rel_meta["articles_file"]

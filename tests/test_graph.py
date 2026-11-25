@@ -1,4 +1,5 @@
 """Tests for the LangGraph cyclic RAG graph."""
+
 from unittest.mock import MagicMock, patch
 
 from scripbox_kb.config import AppConfig

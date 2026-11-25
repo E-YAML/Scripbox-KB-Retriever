@@ -1,4 +1,5 @@
 """LangGraph state definition for the cyclic RAG pipeline."""
+
 from __future__ import annotations
 
 import operator
@@ -26,7 +27,7 @@ class RAGState(TypedDict):
     validation_error: str | None
 
     # ── Retrieval ──────────────────────────────────────────────────────────────
-    effective_query: str           # original or most-recent rewrite
+    effective_query: str  # original or most-recent rewrite
     retrieved_hits: list[RetrievalHit]
     graded_hits: list[RetrievalHit]  # after threshold + dedup
 
@@ -38,14 +39,14 @@ class RAGState(TypedDict):
 
     # ── Generation ─────────────────────────────────────────────────────────────
     answer_stream: Iterator[str] | None
-    answer_text: str | None          # used for abstain / static messages
+    answer_text: str | None  # used for abstain / static messages
     provider_used: str | None
     fallback_reason: str | None
 
     # ── Final output ───────────────────────────────────────────────────────────
     sources: list[RetrievalHit]
-    status: str                      # success | abstained | validation_error
-                                     # | retrieval_failure | provider_failure
+    status: str  # success | abstained | validation_error
+    # | retrieval_failure | provider_failure
 
     error_message: str | None
 

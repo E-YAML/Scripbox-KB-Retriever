@@ -31,16 +31,14 @@ Usage:
     # 6. Show status of current release and release history
     python ingest.py status
 """
+
 from __future__ import annotations
 
 import argparse
 import hashlib
 import json
 import os
-import shutil
-import sys
-import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -67,7 +65,7 @@ def load_manifest() -> dict[str, Any]:
     if not MANIFEST_FILE.exists():
         return {"releases": {}}
     try:
-        with open(MANIFEST_FILE, "r", encoding="utf-8") as f:
+        with open(MANIFEST_FILE, encoding="utf-8") as f:
             return json.load(f)
     except Exception:
         return {"releases": {}}
@@ -87,7 +85,7 @@ def load_current_release() -> dict[str, Any] | None:
     if not CURRENT_FILE.exists():
         return None
     try:
-        with open(CURRENT_FILE, "r", encoding="utf-8") as f:
+        with open(CURRENT_FILE, encoding="utf-8") as f:
             return json.load(f)
     except Exception:
         return None
@@ -127,7 +125,7 @@ def cmd_crawl(source_file: str | None = None) -> str:
     If source_file is provided, copies from that file. Otherwise runs scraper.
     """
     ensure_releases_dir()
-    release_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S_%fZ")
+    release_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%S_%fZ")
     release_dir = RELEASES_ROOT / release_id
     release_dir.mkdir(parents=True, exist_ok=True)
     target_articles_file = release_dir / "articles.json"
@@ -136,11 +134,13 @@ def cmd_crawl(source_file: str | None = None) -> str:
         src = Path(source_file)
         if not src.exists():
             raise FileNotFoundError(f"Source file '{source_file}' not found.")
-        with open(src, "r", encoding="utf-8") as f:
+        with open(src, encoding="utf-8") as f:
             articles = json.load(f)
         with open(target_articles_file, "w", encoding="utf-8") as f:
             json.dump(articles, f, indent=2, ensure_ascii=False)
-        print(f"[CRAWL] Staged {len(articles)} articles from '{source_file}' -> {target_articles_file}")
+        print(
+            f"[CRAWL] Staged {len(articles)} articles from '{source_file}' -> {target_articles_file}"
+        )
     else:
         print("[CRAWL] Scraping articles from https://help.scripbox.com...")
         import scraper
@@ -159,7 +159,7 @@ def cmd_crawl(source_file: str | None = None) -> str:
     manifest = load_manifest()
     manifest.setdefault("releases", {})[release_id] = {
         "release_id": release_id,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
         "status": "staged",
         "article_count": len(articles),
         "articles_file": str(target_articles_file).replace("\\", "/"),
@@ -185,7 +185,7 @@ def cmd_diff(release_id: str | None = None) -> dict[str, Any]:
     if not staged_path.exists():
         raise FileNotFoundError(f"Release '{release_id}' articles not found at {staged_path}")
 
-    with open(staged_path, "r", encoding="utf-8") as f:
+    with open(staged_path, encoding="utf-8") as f:
         staged_articles = json.load(f)
 
     current = load_current_release()
@@ -193,7 +193,7 @@ def cmd_diff(release_id: str | None = None) -> dict[str, Any]:
     if current and "articles_file" in current:
         cur_file = Path(current["articles_file"])
         if cur_file.exists():
-            with open(cur_file, "r", encoding="utf-8") as f:
+            with open(cur_file, encoding="utf-8") as f:
                 current_articles = json.load(f)
 
     # Key by URL if present, otherwise by title
@@ -240,9 +240,11 @@ def cmd_diff(release_id: str | None = None) -> dict[str, Any]:
         "deleted_titles": deleted_articles[:10],
     }
 
-    print(f"\n{'='*60}")
-    print(f"Release Diff: Staged [{release_id}] vs Active [{diff_summary['active_release'] or 'None'}]")
-    print(f"{'='*60}")
+    print(f"\n{'=' * 60}")
+    print(
+        f"Release Diff: Staged [{release_id}] vs Active [{diff_summary['active_release'] or 'None'}]"
+    )
+    print(f"{'=' * 60}")
     print(f"  Total Articles in Staged:  {len(staged_articles)}")
     print(f"  Total Articles in Active:  {len(current_articles)}")
     print(f"  + New:                     {len(new_articles)}")
@@ -262,7 +264,7 @@ def cmd_diff(release_id: str | None = None) -> dict[str, Any]:
         print("\n  Sample Deleted:")
         for t in deleted_articles[:5]:
             print(f"    - {t}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     return diff_summary
 
@@ -287,16 +289,19 @@ def cmd_build(
     if not articles_path.exists():
         raise FileNotFoundError(f"Articles not found for release '{release_id}' at {articles_path}")
 
-    with open(articles_path, "r", encoding="utf-8") as f:
+    with open(articles_path, encoding="utf-8") as f:
         articles = json.load(f)
 
     backend = backend or resolve_key("VECTOR_DB_TYPE") or "chroma"
     print(f"[BUILD] Building release {release_id} using backend '{backend}'...")
 
     chunks = chunk_articles(articles, chunk_words=400, overlap_words=80)
-    print(f"[BUILD] Generated {len(chunks)} overlapping semantic chunks from {len(articles)} articles.")
+    print(
+        f"[BUILD] Generated {len(chunks)} overlapping semantic chunks from {len(articles)} articles."
+    )
 
     from sentence_transformers import SentenceTransformer
+
     encoder = SentenceTransformer(embed_model)
     texts = [c.content for c in chunks]
     embeddings = encoder.encode(texts, batch_size=64, show_progress_bar=False).tolist()
@@ -306,6 +311,7 @@ def cmd_build(
 
     if backend == "chroma":
         import chromadb
+
         chroma_dir_path = release_dir / "chroma_db"
         chroma_dir = str(chroma_dir_path).replace("\\", "/")
         client = chromadb.PersistentClient(path=str(chroma_dir_path))
@@ -391,7 +397,7 @@ def cmd_build(
         "article_count": len(articles),
         "chunk_count": len(chunks),
         "embed_model": embed_model,
-        "built_at": datetime.now(timezone.utc).isoformat(),
+        "built_at": datetime.now(UTC).isoformat(),
     }
     atomic_write_json(release_dir / "build_info.json", build_info)
 
@@ -430,7 +436,7 @@ def cmd_promote(release_id: str | None = None, smoke_test: bool = True) -> dict[
             f"Release '{release_id}' has not been built yet (missing build_info.json). Run 'python ingest.py build' first."
         )
 
-    with open(build_info_path, "r", encoding="utf-8") as f:
+    with open(build_info_path, encoding="utf-8") as f:
         build_info = json.load(f)
 
     # Smoke test verification
@@ -450,7 +456,9 @@ def cmd_promote(release_id: str | None = None, smoke_test: bool = True) -> dict[
         store = KBStore(test_config)
         hits = store.retrieve("KYC investment account", top_k=2)
         if not hits:
-            raise RuntimeError(f"Smoke test failed: retrieval returned 0 hits for release '{release_id}'. Aborting promotion.")
+            raise RuntimeError(
+                f"Smoke test failed: retrieval returned 0 hits for release '{release_id}'. Aborting promotion."
+            )
         print(f"[PROMOTE] Smoke test passed! Retrieved {len(hits)} hits (top: '{hits[0].title}')")
 
     current = load_current_release()
@@ -458,7 +466,7 @@ def cmd_promote(release_id: str | None = None, smoke_test: bool = True) -> dict[
 
     new_current = {
         "release_id": release_id,
-        "promoted_at": datetime.now(timezone.utc).isoformat(),
+        "promoted_at": datetime.now(UTC).isoformat(),
         "previous_release": previous_id,
         "backend": build_info["backend"],
         "collection_name": build_info["collection_name"],
@@ -501,15 +509,17 @@ def cmd_rollback() -> dict[str, Any]:
     prev_dir = RELEASES_ROOT / prev_id
     prev_build_info = prev_dir / "build_info.json"
     if not prev_build_info.exists():
-        raise FileNotFoundError(f"Previous release directory or build_info not found at {prev_build_info}")
+        raise FileNotFoundError(
+            f"Previous release directory or build_info not found at {prev_build_info}"
+        )
 
-    with open(prev_build_info, "r", encoding="utf-8") as f:
+    with open(prev_build_info, encoding="utf-8") as f:
         build_info = json.load(f)
 
     active_id = current["release_id"]
     new_current = {
         "release_id": prev_id,
-        "promoted_at": datetime.now(timezone.utc).isoformat(),
+        "promoted_at": datetime.now(UTC).isoformat(),
         "previous_release": active_id,  # allows rolling forward if needed
         "backend": build_info["backend"],
         "collection_name": build_info["collection_name"],
@@ -542,9 +552,9 @@ def cmd_status() -> dict[str, Any]:
     manifest = load_manifest()
     releases = manifest.get("releases", {})
 
-    print(f"\n{'='*65}")
+    print(f"\n{'=' * 65}")
     print("Scripbox KB Ingestion Status")
-    print(f"{'='*65}")
+    print(f"{'=' * 65}")
     if current:
         print(f"ACTIVE RELEASE:     {current.get('release_id')}")
         print(f"  Backend:          {current.get('backend')}")
@@ -567,7 +577,7 @@ def cmd_status() -> dict[str, Any]:
         bkend = str(r.get("backend", "-"))
         mark = "▶" if current and current.get("release_id") == rid else " "
         print(f"{mark} {rid:<20} {status:<10} {art_cnt:<10} {chk_cnt:<10} {bkend:<10}")
-    print(f"{'='*65}\n")
+    print(f"{'=' * 65}\n")
 
     return {"current": current, "releases": releases}
 
@@ -591,12 +601,16 @@ def main() -> None:
     p_build = subparsers.add_parser("build", help="Chunk and index staged release")
     p_build.add_argument("--release", help="Release ID to build (defaults to latest staged)")
     p_build.add_argument("--backend", choices=["chroma", "qdrant"], help="Vector DB backend")
-    p_build.add_argument("--embed-model", default="all-MiniLM-L6-v2", help="SentenceTransformer model")
+    p_build.add_argument(
+        "--embed-model", default="all-MiniLM-L6-v2", help="SentenceTransformer model"
+    )
 
     # promote
     p_promote = subparsers.add_parser("promote", help="Validate and promote release to active")
     p_promote.add_argument("--release", help="Release ID to promote (defaults to latest built)")
-    p_promote.add_argument("--skip-smoke-test", action="store_true", help="Skip smoke test before promoting")
+    p_promote.add_argument(
+        "--skip-smoke-test", action="store_true", help="Skip smoke test before promoting"
+    )
 
     # rollback
     subparsers.add_parser("rollback", help="Instant rollback to previous release")

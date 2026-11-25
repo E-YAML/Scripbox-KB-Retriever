@@ -1,4 +1,5 @@
 """LLM provider streaming clients with fallback and a non-streaming call helper."""
+
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -142,9 +143,7 @@ def stream_with_fallback(
                 yield first
                 yield from gen
 
-            return ProviderResult(
-                provider="groq", stream=chain_generator(first_chunk, stream_gen)
-            )
+            return ProviderResult(provider="groq", stream=chain_generator(first_chunk, stream_gen))
         except ProviderAuthError:
             raise
         except (ProviderRateLimitError, ProviderModelNotFoundError) as e:

@@ -3,6 +3,7 @@
 ``QueryService`` maintains backward-compatible ``ServiceResponse`` output so
 ``app.py`` requires minimal changes.
 """
+
 from __future__ import annotations
 
 import threading

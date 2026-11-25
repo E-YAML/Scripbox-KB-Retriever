@@ -4,6 +4,7 @@ Splits articles into overlapping word-based chunks, retaining article metadata
 on every chunk. This dramatically improves retrieval precision compared to
 full-article indexing.
 """
+
 from __future__ import annotations
 
 import hashlib

@@ -22,6 +22,7 @@ Graph topology:
                END          [abstain] ────┘
                               (after MAX_REWRITES)
 """
+
 from __future__ import annotations
 
 import time
@@ -32,7 +33,6 @@ from scripbox_kb.config import AppConfig
 from scripbox_kb.graph_state import RAGState
 from scripbox_kb.kb_store import KBStore, RetrievalHit
 from scripbox_kb.prompting import INSUFFICIENT_CONTEXT_MESSAGE
-
 
 # ─── Node factories ───────────────────────────────────────────────────────────
 
@@ -53,9 +53,17 @@ def make_validate_node(config: AppConfig) -> Callable[[RAGState], dict]:
         # Fast pre-retrieval guardrail for creative or stock-tipping requests
         q_lower = query.lower()
         out_of_scope_patterns = [
-            "poem", "poetry", "write a song", "write me a poem", "tell me a joke",
-            "write a story", "best stock to buy", "best stocks to buy",
-            "which stock to buy", "which stock should i buy", "stock tip",
+            "poem",
+            "poetry",
+            "write a song",
+            "write me a poem",
+            "tell me a joke",
+            "write a story",
+            "best stock to buy",
+            "best stocks to buy",
+            "which stock to buy",
+            "which stock should i buy",
+            "stock tip",
         ]
         if any(p in q_lower for p in out_of_scope_patterns):
             return {
@@ -159,9 +167,13 @@ def make_rewrite_node(config: AppConfig) -> Callable[[RAGState], dict]:
         ).strip()
 
         # Clean any introductory headings or markdown quotes
-        lines = [ln.strip() for ln in raw.splitlines() if ln.strip() and not ln.strip().startswith("#")]
+        lines = [
+            ln.strip() for ln in raw.splitlines() if ln.strip() and not ln.strip().startswith("#")
+        ]
         candidate = lines[-1] if lines else raw
-        cleaned = re.sub(r'[*"`]|^(Rewritten (search )?query:?|\bQuery:?)\s*', '', candidate, flags=re.I).strip()
+        cleaned = re.sub(
+            r'[*"`]|^(Rewritten (search )?query:?|\bQuery:?)\s*', "", candidate, flags=re.I
+        ).strip()
 
         # If rewriter identified the query as out-of-domain, force abstention
         if cleaned.upper() == "UNRELATED" or raw.strip().upper() == "UNRELATED":

@@ -12,6 +12,7 @@ Usage:
 
 Run after scraper.py whenever the knowledge base is updated.
 """
+
 from __future__ import annotations
 
 import json
@@ -180,7 +181,9 @@ def main() -> None:
 
     articles = load_articles(ARTICLES_FILE)
 
-    print(f"\nChunking {len(articles)} articles (chunk_words={CHUNK_WORDS}, overlap={OVERLAP_WORDS})...")
+    print(
+        f"\nChunking {len(articles)} articles (chunk_words={CHUNK_WORDS}, overlap={OVERLAP_WORDS})..."
+    )
     chunks = chunk_articles(articles, chunk_words=CHUNK_WORDS, overlap_words=OVERLAP_WORDS)
     print(f"Generated {len(chunks)} chunks")
 

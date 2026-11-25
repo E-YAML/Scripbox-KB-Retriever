@@ -1,4 +1,5 @@
 """Knowledge base store: ChromaDB and Qdrant backends + embedding model."""
+
 from __future__ import annotations
 
 import json
@@ -15,6 +16,7 @@ except ImportError:
 
 
 # ─── Exceptions ───────────────────────────────────────────────────────────────
+
 
 class KBError(Exception):
     """Base class for KB store exceptions."""
@@ -33,6 +35,7 @@ class ModelLoadError(KBError):
 
 
 # ─── Data models ──────────────────────────────────────────────────────────────
+
 
 @dataclass
 class KBStats:
@@ -57,6 +60,7 @@ class RetrievalHit:
 
 # ─── Backend abstractions ─────────────────────────────────────────────────────
 
+
 class _ChromaBackend:
     """ChromaDB PersistentClient retrieval backend."""
 
@@ -71,16 +75,21 @@ class _ChromaBackend:
     ) -> list[tuple[str, dict[str, Any], float]]:
         """Return (document, metadata, distance) tuples."""
         res = self._collection.query(
-            query_embeddings=[query_vector],
+            query_embeddings=[query_vector],  # type: ignore[arg-type]
             n_results=top_k,
             include=["documents", "metadatas", "distances"],
         )
         results: list[tuple[str, dict[str, Any], float]] = []
-        if res.get("ids") and res["ids"][0]:
-            for i in range(len(res["ids"][0])):
-                doc = res["documents"][0][i]
-                meta = res["metadatas"][0][i] or {}
-                dist = float(res["distances"][0][i])
+        ids_list = res.get("ids")
+        docs_list = res.get("documents")
+        metas_list = res.get("metadatas")
+        dists_list = res.get("distances")
+        if ids_list and ids_list[0] and docs_list and metas_list and dists_list:
+            for i in range(len(ids_list[0])):
+                doc = str(docs_list[0][i])
+                meta_item = metas_list[0][i]
+                meta = dict(meta_item) if isinstance(meta_item, dict) else {}
+                dist = float(dists_list[0][i])
                 results.append((doc, meta, dist))
         return results
 
@@ -115,7 +124,8 @@ class _QdrantBackend:
             )
             points = res.points
         else:
-            points = self._client.search(
+            search_fn = getattr(self._client, "search")  # noqa: B009
+            points = search_fn(
                 collection_name=self._collection_name,
                 query_vector=query_vector,
                 limit=top_k,
@@ -135,6 +145,7 @@ class _QdrantBackend:
 
 
 # ─── Main store ───────────────────────────────────────────────────────────────
+
 
 class KBStore:
     """Manages vector DB backend + embedding model for the knowledge base."""
@@ -263,9 +274,7 @@ class KBStore:
             with open(filepath, encoding="utf-8") as f:
                 articles = json.load(f)
             stats.total = len(articles)
-            cats = sorted(
-                {a.get("category", "").strip() for a in articles if a.get("category")}
-            )
+            cats = sorted({a.get("category", "").strip() for a in articles if a.get("category")})
             stats.categories = len(cats)
             stats.category_list = cats
         except Exception:
@@ -296,6 +305,7 @@ class KBStore:
 
 
 # ─── Factory ─────────────────────────────────────────────────────────────────
+
 
 def create_kb_store(config: AppConfig) -> KBStore:
     """Create a KBStore from an AppConfig."""

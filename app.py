@@ -542,11 +542,11 @@ with st.sidebar:
     st.markdown(
         f'<div style="font-size:0.8rem;color:#94A3B8;">🤖 `{active_model}`</div>\n'
         f'<div style="font-size:0.8rem;color:#94A3B8;margin-top:0.2rem;">'
-        f'↩ Fallback: `{config.gemini_model}`</div>\n'
+        f"↩ Fallback: `{config.gemini_model}`</div>\n"
         f'<div style="font-size:0.8rem;color:#94A3B8;margin-top:0.2rem;">'
-        f'🔍 `{config.embed_model}`</div>\n'
+        f"🔍 `{config.embed_model}`</div>\n"
         f'<div style="font-size:0.8rem;color:#94A3B8;margin-top:0.2rem;">'
-        f'Top-K results: `{config.top_k}`</div>',
+        f"Top-K results: `{config.top_k}`</div>",
         unsafe_allow_html=True,
     )
 
@@ -719,8 +719,7 @@ if user_query:
         elif response.status == "success":
             if response.fallback_reason:
                 msg = (
-                    f"⚠️ {response.fallback_reason} — "
-                    f"switched to {response.provider_used} fallback."
+                    f"⚠️ {response.fallback_reason} — switched to {response.provider_used} fallback."
                 )
                 st.info(msg, icon="🔄")
             # Surface query rewrite if the graph rewrote the query
@@ -730,7 +729,6 @@ if user_query:
                     f"for better retrieval coverage.",
                     icon="🔄",
                 )
-
 
             if response.answer_stream is not None:
                 answer = st.write_stream(response.answer_stream)

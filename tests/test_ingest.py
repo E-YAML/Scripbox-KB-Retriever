@@ -1,4 +1,5 @@
 """Unit tests for ingest.py staged ingestion and rollback CLI."""
+
 from __future__ import annotations
 
 import json
@@ -6,7 +7,6 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import ingest
 
@@ -27,8 +27,16 @@ class TestIngest(unittest.TestCase):
 
         # Create dummy articles file
         self.sample_articles = [
-            {"title": "Article 1", "url": "https://help.scripbox.com/1", "content": "Content of article one."},
-            {"title": "Article 2", "url": "https://help.scripbox.com/2", "content": "Content of article two."},
+            {
+                "title": "Article 1",
+                "url": "https://help.scripbox.com/1",
+                "content": "Content of article one.",
+            },
+            {
+                "title": "Article 2",
+                "url": "https://help.scripbox.com/2",
+                "content": "Content of article two.",
+            },
         ]
         self.dummy_articles_file = Path(self.test_dir) / "dummy_articles.json"
         with open(self.dummy_articles_file, "w", encoding="utf-8") as f:
@@ -69,9 +77,21 @@ class TestIngest(unittest.TestCase):
 
         # 2. Stage release 2 with changes: Article 1 updated, Article 2 kept, Article 3 added
         modified_articles = [
-            {"title": "Article 1", "url": "https://help.scripbox.com/1", "content": "Updated content of article one."},
-            {"title": "Article 2", "url": "https://help.scripbox.com/2", "content": "Content of article two."},
-            {"title": "Article 3", "url": "https://help.scripbox.com/3", "content": "Content of article three."},
+            {
+                "title": "Article 1",
+                "url": "https://help.scripbox.com/1",
+                "content": "Updated content of article one.",
+            },
+            {
+                "title": "Article 2",
+                "url": "https://help.scripbox.com/2",
+                "content": "Content of article two.",
+            },
+            {
+                "title": "Article 3",
+                "url": "https://help.scripbox.com/3",
+                "content": "Content of article three.",
+            },
         ]
         articles_v2_file = Path(self.test_dir) / "articles_v2.json"
         with open(articles_v2_file, "w", encoding="utf-8") as f:

@@ -12,6 +12,7 @@ Usage:
 
 Exit code 0 = all pass; 1 = failures detected.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -38,8 +39,8 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 RESULTS_DIR = Path(__file__).parent / "results"
 
 # Evaluation gates
-RECALL_GATE = 0.80       # ≥80% recall@5 required (use 95% when you have 50+ cases)
-ABSTENTION_GATE = 1.0    # 100% abstention pass rate required
+RECALL_GATE = 0.80  # ≥80% recall@5 required (use 95% when you have 50+ cases)
+ABSTENTION_GATE = 1.0  # 100% abstention pass rate required
 
 
 def load_fixtures(names: list[str] | None = None) -> list[dict[str, Any]]:
@@ -78,16 +79,13 @@ def run_case(case: dict[str, Any], service: QueryService) -> dict[str, Any]:
 
     # Check abstention
     abstained = response.status == "abstained"
-    abstention_ok = (should_abstain == abstained)
+    abstention_ok = should_abstain == abstained
 
     # Check recall (only for non-abstain cases)
     recall_ok = True
     if not should_abstain and expected_sources:
         source_urls = [h.url for h in response.sources]
-        recall_ok = any(
-            any(exp in url for url in source_urls)
-            for exp in expected_sources
-        )
+        recall_ok = any(any(exp in url for url in source_urls) for exp in expected_sources)
 
     passed = abstention_ok and recall_ok
 
@@ -136,11 +134,15 @@ def print_results(results: list[dict[str, Any]]) -> bool:
                 print(f"   retrieved={r['retrieved_urls'][:3]}")
 
     print("\n" + "-" * 70)
-    print(f"Total:            {passed}/{total} passed ({passed/total*100:.0f}%)")
+    print(f"Total:            {passed}/{total} passed ({passed / total * 100:.0f}%)")
     if recall_cases:
-        print(f"Recall@5:         {recall_passed}/{len(recall_cases)} ({recall_passed/len(recall_cases)*100:.0f}%)")
+        print(
+            f"Recall@5:         {recall_passed}/{len(recall_cases)} ({recall_passed / len(recall_cases) * 100:.0f}%)"
+        )
     if abstain_cases:
-        print(f"Abstention rate:  {abstain_passed}/{len(abstain_cases)} ({abstain_passed/len(abstain_cases)*100:.0f}%)")
+        print(
+            f"Abstention rate:  {abstain_passed}/{len(abstain_cases)} ({abstain_passed / len(abstain_cases) * 100:.0f}%)"
+        )
     print("-" * 70)
 
     # Gate checks
@@ -148,13 +150,17 @@ def print_results(results: list[dict[str, Any]]) -> bool:
     if recall_cases:
         recall_rate = recall_passed / len(recall_cases)
         gate_status = "[PASS]" if recall_rate >= RECALL_GATE else "[FAIL]"
-        print(f"{gate_status} Recall@5 gate: {recall_rate*100:.0f}% (required >={RECALL_GATE*100:.0f}%)")
+        print(
+            f"{gate_status} Recall@5 gate: {recall_rate * 100:.0f}% (required >={RECALL_GATE * 100:.0f}%)"
+        )
         if recall_rate < RECALL_GATE:
             gates_ok = False
     if abstain_cases:
         abstain_rate = abstain_passed / len(abstain_cases)
         gate_status = "[PASS]" if abstain_rate >= ABSTENTION_GATE else "[FAIL]"
-        print(f"{gate_status} Abstention gate: {abstain_rate*100:.0f}% (required >={ABSTENTION_GATE*100:.0f}%)")
+        print(
+            f"{gate_status} Abstention gate: {abstain_rate * 100:.0f}% (required >={ABSTENTION_GATE * 100:.0f}%)"
+        )
         if abstain_rate < ABSTENTION_GATE:
             gates_ok = False
 
@@ -165,9 +171,13 @@ def print_results(results: list[dict[str, Any]]) -> bool:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run Scripbox KB eval suite")
     parser.add_argument("--fixtures", nargs="*", help="Fixture file names (without .yaml)")
-    parser.add_argument("--threshold", type=float, default=None, help="Override retrieval threshold")
+    parser.add_argument(
+        "--threshold", type=float, default=None, help="Override retrieval threshold"
+    )
     parser.add_argument("--output", type=str, default=None, help="Save JSON results to file")
-    parser.add_argument("--mock", action="store_true", help="Run with mock KB store and LLM for CI testing")
+    parser.add_argument(
+        "--mock", action="store_true", help="Run with mock KB store and LLM for CI testing"
+    )
     args = parser.parse_args()
 
     cases = load_fixtures(args.fixtures)
@@ -180,6 +190,7 @@ def main() -> int:
 
     if args.threshold is not None:
         from dataclasses import replace
+
         config = replace(config, retrieval_threshold=args.threshold)
 
     patcher_stream = None
@@ -188,7 +199,8 @@ def main() -> int:
     if args.mock:
         from dataclasses import replace
         from unittest.mock import patch
-        from scripbox_kb.kb_store import KBStore, RetrievalHit
+
+        from scripbox_kb.kb_store import RetrievalHit
         from scripbox_kb.providers import ProviderResult
 
         config = replace(
@@ -201,9 +213,12 @@ def main() -> int:
         class MockKB:
             def load(self):
                 pass
+
             def retrieve(self, query: str, top_k: int = 5) -> list[RetrievalHit]:
                 for c in cases:
-                    if not c.get("should_abstain") and (c["query"].lower() in query.lower() or query.lower() in c["query"].lower()):
+                    if not c.get("should_abstain") and (
+                        c["query"].lower() in query.lower() or query.lower() in c["query"].lower()
+                    ):
                         src = c.get("expected_sources", ["https://help.scripbox.com/solutions"])[0]
                         return [
                             RetrievalHit(
@@ -216,12 +231,16 @@ def main() -> int:
                             )
                         ]
                 return []
+
             def health_check(self) -> bool:
                 return True
 
         kb_store: Any = MockKB()
 
-        patcher_stream = patch("scripbox_kb.providers.stream_with_fallback", return_value=ProviderResult(iter(["Mock answer"]), "mock"))
+        patcher_stream = patch(
+            "scripbox_kb.providers.stream_with_fallback",
+            return_value=ProviderResult(iter(["Mock answer"]), "mock"),
+        )
         patcher_call = patch("scripbox_kb.providers.call_once", return_value="UNRELATED")
         patcher_stream.start()
         patcher_call.start()

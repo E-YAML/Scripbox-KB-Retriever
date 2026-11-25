@@ -20,7 +20,10 @@ Cycle structure
                   ▼
               generate ──────────────────────────────────► END
 """
+
 from __future__ import annotations
+
+from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 
@@ -40,7 +43,7 @@ from scripbox_kb.graph_state import RAGState
 from scripbox_kb.kb_store import KBStore
 
 
-def build_rag_graph(config: AppConfig, kb_store: KBStore):
+def build_rag_graph(config: AppConfig, kb_store: KBStore) -> Any:
     """Build and compile the cyclic RAG LangGraph.
 
     Args:
@@ -53,7 +56,7 @@ def build_rag_graph(config: AppConfig, kb_store: KBStore):
     # Propagate max_rewrites to the routing function
     set_max_rewrites(config.max_rewrites)
 
-    workflow: StateGraph = StateGraph(RAGState)
+    workflow: Any = StateGraph(RAGState)
 
     # ── Nodes ─────────────────────────────────────────────────────────────────
     workflow.add_node("validate_input", make_validate_node(config))
@@ -79,7 +82,7 @@ def build_rag_graph(config: AppConfig, kb_store: KBStore):
         route_after_grading,
         {
             "sufficient": "generate",
-            "rewrite": "rewrite_query",   # ◄── CYCLE entry
+            "rewrite": "rewrite_query",  # ◄── CYCLE entry
             "abstain": "abstain",
             "error": END,
         },

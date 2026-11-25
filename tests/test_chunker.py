@@ -1,4 +1,5 @@
 """Tests for the chunker module."""
+
 from scripbox_kb.chunker import chunk_article, chunk_articles
 
 

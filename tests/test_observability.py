@@ -1,4 +1,5 @@
 """Tests for privacy-safe structured observability logging."""
+
 from unittest.mock import patch
 
 from scripbox_kb import observability

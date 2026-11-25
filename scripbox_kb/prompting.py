@@ -1,4 +1,5 @@
 """Prompt construction, system prompts, and query rewriting helpers."""
+
 from __future__ import annotations
 
 SYSTEM_PROMPT = (
